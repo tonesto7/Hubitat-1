@@ -1,7 +1,7 @@
 /**
- *  Tuya Zigbee Valve driver for Hubitat Elevation
+ *  Tuya Zigbee Smoke Detector driver for Hubitat Elevation
  * 
- *  https://community.hubitat.com/t/alpha-tuya-zigbee-valve-driver/92788 
+ *  https://community.hubitat.com/t/beta-tuya-zigbee-smoke-detector/104159
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -13,13 +13,9 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *
- *  ver. 1.0.0 2022-04-22 kkossev - inital version
- *  ver. 1.0.1 2022-04-23 kkossev - added Refresh command; [overwrite: true] explicit option for runIn calls; capability PowerSource
- *  ver. 1.0.2 2022-08-14 kkossev - added _TZE200_sh1btabb WaterIrrigationValve (On/Off only); fingerprint inClusters correction; battery capability; open/close commands changes
- *  ver. 1.0.3 2022-08-19 kkossev - decreased delay betwen Tuya commands to 200 milliseconds; irrigation valve open/close commands are sent 2 times; digital/physicla timer changed to 3 seconds;
- *  ver. 1.0.4 2022-11-28 kkossev - added Power-On Behaviour preference setting
- *
- *            TODO Presence check timer
+ *  ver. 1.0.0 2022-10-29 kkossev - inital version for _TZE200_ntcy3xu1
+ *  ver. 1.0.1 2022-10-31 kkossev - added _TZE200_uebojraa
+ *  ver. 1.0.2 2022-11-17 kkossev - notPresentCounter set to 12 hours; states set to 'unknown' on device creation'; added Clear Detected Tested buttons; removed Configure button
  *
  *
  */
@@ -27,19 +23,28 @@ import groovy.json.*
 import groovy.transform.Field
 import hubitat.zigbee.zcl.DataType
 
-def version() { "1.0.4" }
-def timeStamp() {"2022/11/28 10:43 PM"}
+def version() { "1.0.2" }
+def timeStamp() {"2022/11/17 1:13 PM"}
 
 @Field static final Boolean debug = false
 
 metadata {
-    definition (name: "Tuya Zigbee Valve", namespace: "kkossev", author: "Krassimir Kossev", importUrl: "https://raw.githubusercontent.com/kkossev/Hubitat/development/Drivers/Tuya%20Zigbee%20Valve/Tuya%20Zigbee%20Valve.groovy", singleThreaded: true ) {
-        capability "Actuator"    
-        capability "Valve"
-        capability "Refresh"
-        capability "Configuration"
-        capability "PowerSource"    //powerSource - ENUM ["battery", "dc", "mains", "unknown"]
-        capability "Battery"
+    definition (name: "Tuya Zigbee Smoke Detector", namespace: "kkossev", author: "Krassimir Kossev", importUrl: "https://raw.githubusercontent.com/kkossev/Hubitat/development/Drivers/Tuya_Zigbee_Smoke_Detector/Tuya_Zigbee_Smoke_Detector.groovy", singleThreaded: true ) {
+		capability "Sensor"
+		//capability "Configuration"
+		capability "Smoke Detector"    // attributes: smoke ("detected","clear","tested")    ea.STATE, true, false).withDescription('Smoke alarm status'),  [dp=1] 
+        capability "TamperAlert"       // attributes: tamper - ENUM ["clear", "detected"]    [dp=4 ]  values 1/0
+		capability "TestCapability"
+		capability "Battery"            //  ea.STATE, ['low', 'middle', 'high']).withDescription('Battery level state'),    dp14 0=25% 1=50% 2=90% [dp=14] battery low   value 2 (FULL)
+        capability "PowerSource"        //powerSource - ENUM ["battery", "dc", "mains", "unknown"]
+        capability "PresenceSensor"
+
+        command "clear"
+        command "detected"
+        command "tested"
+        
+        //command "silenceSiren", [[name:"Silence Siren", type: "ENUM", description: "Silence the Siren", constraints: ["--- Select ---", "true", "false" ]]]        // 'Silence the siren' ea.STATE_SET, true, false)    HE->Tuya  dp=16, BOOL
+        //command "enableAlarm",  [[name:"Enable Alarm",  type: "ENUM", description: "Enable the Alarm",  constraints: ["--- Select ---", "true", "false" ]]]          //'Enable the alarm' ea.STATE_SET, true, false     HE->Tuya  dp=20, ENUM, true: 0, false: 1
         
         if (debug == true) {        
             command "test", [
@@ -48,49 +53,27 @@ metadata {
                 [name:"dpType",    type: "ENUM",   constraints: ["DP_TYPE_VALUE", "DP_TYPE_BOOL", "DP_TYPE_ENUM"], description: "DP data type"] 
             ]
         }
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0003,0004,0005,0006,E000,E001,0000", outClusters:"0019,000A",     model:"TS0001", manufacturer:"_TZ3000_iedbgyxt"     // https://community.hubitat.com/t/generic-zigbee-3-0-valve-not-getting-fingerprint/92614
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0003,0004,0005,0006,E000,E001", outClusters:"0019,000A",     model:"TS0001", manufacturer:"_TZ3000_o4cjetlm"     // https://community.hubitat.com/t/water-shutoff-valve-that-works-with-hubitat/32454/59?u=kkossev
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00",                outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_vrjkcam9"     // https://community.hubitat.com/t/tuya-zigbee-water-gas-valve/78412?u=kkossev
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,0006",                outClusters:"0019",          model:"TS0011", manufacturer:"_TYZB01_rifa0wlb"     // https://community.hubitat.com/t/tuya-zigbee-water-gas-valve/78412 
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0003,0006",                     outClusters:"0003,0006,0004",model:"TS0001", manufacturer:"_TYZB01_4tlksk8a"     // clusters verified
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0003,0004,0005,0006,E000,E001", outClusters:"0019,000A",     model:"TS011F", manufacturer:"_TZ3000_rk2yzt0u"     // clusters verified! model: 'ZN231392'
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0003,0004,0005,0006,E000,E001,0000", outClusters:"0019,000A",     model:"TS0001", manufacturer:"_TZ3000_h3noz0a5"     // clusters verified
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0003,0004,0005,0006,0702,0B04", outClusters:"0019",          model:"TS0011", manufacturer:"_TYZB01_ymcdbl3u"     // clusters verified
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0003,0004,0005,0006,0702,EF00", outClusters:"0019",          model:"TS0601", manufacturer:"_TZE200_akjefhj5"     // SASWELL SAS980SWT-7-Z01 (_TZE200_akjefhj5, TS0601) https://github.com/zigpy/zha-device-handlers/discussions/1660 
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000",                outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_sh1btabb"     // WaterIrrigationValve https://github.com/Koenkk/zigbee-herdsman-converters/blob/21a66c05aa533de356a51c8417073f28092c6e9d/devices/giex.js 
-        // TODO: _TZE200_5uodvhgc https://github.com/sprut/Hub/issues/1316 https://www.youtube.com/watch?v=lpL6xAYuBHk 
-        
-   
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_ntcy3xu1"    // https:www.aliexpress.com/item/1005003951429372.html
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_uebojraa"    // https://community.hubitat.com/t/tuya-zigbee-smart-smoke-detector-support/102471
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_t5p1vj8r"    // not tested
+        //
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_yh7aoahi"    // https://github.com/Koenkk/zigbee2mqtt/issues/11119 silence = Code 16; smoke detection state = code 1; Fault Alarm = Code 11; battery level state = code 14; battery level = Code 15;
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_5d3vhjro"    // 'SA12IZL'
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_aycxwiau"    // TuyaIasZone ?
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A",     model:"TS0601", manufacturer:"_TZE200_vzekyi4c"    // TuyaIasZone ?
+  
     }
     
     preferences {
         input (name: "logEnable", type: "bool", title: "<b>Debug logging</b>", description: "<i>Debug information, useful for troubleshooting. Recommended value is <b>false</b></i>", defaultValue: true)
         input (name: "txtEnable", type: "bool", title: "<b>Description text logging</b>", description: "<i>Display measured values in HE log page. Recommended value is <b>true</b></i>", defaultValue: true)
-        input (name: "powerOnBehaviour", type: "enum", title: "<b>Power-On Behaviour</b>", description:"<i>Select Power-On Behaviour</i>", defaultValue: "2", options: powerOnBehaviourOptions)
-        //input (name: "switchType", type: "enum", title: "<b>Switch Type</b>", description:"<i>Select witch Type</i>", defaultValue: "0", options: switchTypeOptions)
     }
 }
 
 // Constants
-@Field static final Integer presenceCountTreshold = 3
-@Field static final Integer defaultPollingInterval = 15
-@Field static final Integer debouncingTimer = 300
-@Field static final Integer digitalTimer = 3000
-@Field static final Integer refreshTimer = 3000
+@Field static final Integer presenceCountTreshold = 12
+@Field static final Integer defaultPollingInterval = 3600
 @Field static String UNKNOWN = "UNKNOWN"
-
-@Field static final Map powerOnBehaviourOptions = [   
-    '0': 'closed',
-    '1': 'open',
-    '2': 'last state'
-]
-
-@Field static final Map switchTypeOptions = [   
-    '0': 'toggle',
-    '1': 'state',
-    '2': 'momentary'
-]
-
 
 private getCLUSTER_TUYA()       { 0xEF00 }
 private getTUYA_ELECTRICIAN_PRIVATE_CLUSTER() { 0xE001 }
@@ -105,7 +88,7 @@ private getDP_TYPE_STRING()     { "03" }    // [ N byte string ]
 private getDP_TYPE_ENUM()       { "04" }    // [ 0-255 ]
 private getDP_TYPE_BITMAP()     { "05" }    // [ 1,2,4 bytes ] as bits
 
-def isWaterIrrigationValve() { return device.getDataValue('manufacturer') in ['_TZE200_sh1btabb'] }    // https://www.aliexpress.com/item/1005004222098040.html
+def isTS0601() { return device.getDataValue('model') in ['TS0001'] }
 
 def parse(String description) {
     if (logEnable==true) {log.debug "${device.displayName} description is $description"}
@@ -195,50 +178,7 @@ def parse(String description) {
     } // descMap
 }
 
-def switchEvent( value ) {
-    if (value == 'on') value = 'open'
-    else if (value == 'off') value = 'closed'
-    else value = 'unknown'
 
-    def map = [:] 
-    boolean bWasChange = false
-    if (state.switchDebouncing==true && value==state.lastSwitchState) {    // some devices send only catchall events, some only readattr reports, but some will fire both...
-        if (logEnable) {log.debug "${device.displayName} Ignored duplicated switch event for model ${state.model}"} 
-        runInMillis( debouncingTimer, switchDebouncingClear, [overwrite: true])
-        return null
-    }
-    else {
-        //log.trace "value=${value}  lastSwitchState=${state.lastSwitchState}"
-    }
-    
-    map.type = state.isDigital == true ? "digital" : "physical"
-    if (state.lastSwitchState != value ) {
-        bWasChange = true
-        if (logEnable) {log.debug "${device.displayName} Valve state changed from <b>${state.lastSwitchState}</b> to <b>${value}</b>"}
-        state.switchDebouncing = true
-        state.lastSwitchState = value
-        runInMillis( debouncingTimer, switchDebouncingClear, [overwrite: true])        
-    }
-    else {
-        state.switchDebouncing = true
-        runInMillis( debouncingTimer, switchDebouncingClear, [overwrite: true])     
-    }
-        
-    map.name = "valve"
-    map.value = value
-    if (state.isRefreshRequest == true) {
-        map.descriptionText = "${device.displayName} is ${value} (Refresh)"
-    }
-    else {
-        map.descriptionText = "${device.displayName} is ${value} [${map.type}]"
-    }
-    //if ( bWasChange==true ) 
-    //{
-        if (txtEnable) {log.info "${device.displayName} ${map.descriptionText}"}
-        sendEvent(map)
-    //}
-    clearIsDigital()
-}
 
 
 def parseZDOcommand( Map descMap ) {
@@ -302,7 +242,7 @@ def parseSimpleDescriptorResponse(Map descMap) {
 def parseZHAcommand( Map descMap) {
     switch (descMap.command) {
         case "01" : //read attribute response. If there was no error, the successful attribute reading would be processed in the main parse() method.
-        case "02" : // version 1.0.2 
+        case "02" :
             def status = descMap.data[2]
             def attrId = descMap.data[1] + descMap.data[0] 
             if (status == "86") {
@@ -311,66 +251,35 @@ def parseZHAcommand( Map descMap) {
             else {
                 switch (descMap.clusterId) {
                     case "EF00" :
-                        //if (logEnable==true) log.debug "${device.displayName} Tuya cluster read attribute response: code ${status} Attributte ${attrId} cluster ${descMap.clusterId} data ${descMap.data}"
+                        if (logEnable==true) log.debug "${device.displayName} Tuya cluster read attribute response: code ${status} Attributte ${attrId} cluster ${descMap.clusterId} data ${descMap.data}"
                         def cmd = descMap.data[2]
                         def value = getAttributeValue(descMap.data)
-                        if (logEnable==true) log.trace "${device.displayName} Tuya cluster cmd=${cmd} value=${value} ()"
+                        //if (logEnable==true) log.trace "${device.displayName} Tuya cluster cmd=${cmd} value=${value} ()"
                         def map = [:]
                         switch (cmd) {
-                            case "01" : // switch
-                                if (!isWaterIrrigationValve()) {
-                                    switchEvent(value==0 ? "off" : "on")
-                                }
-                                else {
-                                    if (txtEnable==true) log.info "${device.displayName} Water Valve Mode (dp=${cmd}) is: ${value}"  // 0 - 'duration'; 1 - 'capacity'     // TODO - Send to device ?
-                                }
+                            case "01" : // smoke alarm for all models
+                                if (txtEnable==true) log.info "${device.displayName} smoke alarm (dp=${cmd}) is: ${value}"
+                                sendSmokeAlarmEvent( value )
                                 break
-                            case "02" : // isWaterIrrigationValve() - WaterValveState   1=on 0 = 0ff                               
-                                if (txtEnable==true) log.info "${device.displayName} Water Valve State (dp=${cmd}) is: ${value} (data=${descMap.data})"
-                                switchEvent(value==0 ? "off" : "on")
+                            case "04" : // "TamperAlert" for all models
+                                if (txtEnable==true) log.info "${device.displayName} tamper alert (dp=${cmd}) is: ${value}"
+                                sendTamperAlertEvent( value )
                                 break
-                            case "07" : // Countdown
-                                if (txtEnable==true) log.info "${device.displayName} Countdown (${cmd}) is: ${value}"
+                            case "0B" : // (11) "Fault Alarm" for _TZE200_yh7aoahi
+                                if (txtEnable==true) log.info "${device.displayName} 'silence' state (dp=${cmd}) is: ${value}"
+                                sendBatteryStateEvent( value )
                                 break
-                            case "0D" : // relay status
-                                if (txtEnable==true) log.info "${device.displayName} relay status (${cmd}) is: ${value}"
+                            case "0E" : // (14) "battery level state" ['low', 'middle', 'high'] dp14 0=25% 1=50% 2=90% also for _TZE200_yh7aoahi 
+                                if (txtEnable==true) log.info "${device.displayName} Battery level state (dp=${cmd}) is: ${value}"
+                                sendBatteryStateEvent( value )
                                 break
-                            case "13" : // inching switch ( once enabled, each time the device is turned on, it will automatically turn off after a period time as preset
-                                if (txtEnable==true) log.info "${device.displayName} inching switch(!?!) is: ${value}"
+                            case "0F" : // (15) "battery level % for _TZE200_yh7aoahi 
+                                if (txtEnable==true) log.info "${device.displayName} Battery level % (dp=${cmd}) is: ${value}%"
+                                // TODO - send batteryLevel event!
                                 break
-                            case "65" : // (101) WaterValveIrrigationStartTime
-                                if (txtEnable==true) log.info "${device.displayName} IrrigationStartTime (${cmd}) is: ${value}"
-                                break
-                            case "66" : // (102) WaterValveIrrigationEndTime
-                                if (txtEnable==true) log.info "${device.displayName} IrrigationEndTime (${cmd}) is: ${value}"
-                                break
-                            case "67" : // (103) WaterValveCycleIrrigationNumTimes                                                      // TODO - Send to device cycle_irrigation_num_times ?
-                                if (txtEnable==true) log.info "${device.displayName} CycleIrrigationNumTimes (${cmd}) is: ${value}"
-                                break
-                            case "68" : // (104) WaterValveIrrigationTarget
-                                if (txtEnable==true) log.info "${device.displayName} IrrigationTarget (${cmd}) is: ${value}"            // TODO - Send to device irrigation_target?
-                                break
-                            case "69" : // (105) WaterValveCycleIrrigationInterval                                                      // TODO - Send to device cycle_irrigation_interval ?
-                                if (txtEnable==true) log.info "${device.displayName} CycleIrrigationInterval (${cmd}) is: ${value}"
-                                break
-                            case "6A" : // (106) WaterValveCurrentTempurature
-                                if (txtEnable==true) log.info "${device.displayName} ?CurrentTempurature? (${cmd}) is: ${value}"        // ignore!
-                                break
-                            case "6C" : // (108) WaterValveBattery - _TZE200_sh1btabb
-                                if (txtEnable==true) log.info "${device.displayName} Battery (${cmd}) is: ${value}"
-                                sendBatteryEvent(value)
-                                break
-                            case "6F" : // (111) WaterValveWaterConsumed
-                                if (txtEnable==true) log.info "${device.displayName} WaterConsumed (${cmd}) is: ${value}"
-                                break
-                            case "72" : // (114) WaterValveLastIrrigationDuration
-                                if (txtEnable==true) log.info "${device.displayName} LastIrrigationDuration (${cmd}) is: ${value}"
-                                break
-                            case "D1" : // cycle timer
-                                if (txtEnable==true) log.info "${device.displayName} cycle timer (${cmd}) is: ${value}"
-                                break
-                            case "D2" : // random timer
-                                if (txtEnable==true) log.info "${device.displayName} cycle timer (${cmd}) is: ${value}"
+                            case "10" : // (16) "silence" for _TZE200_yh7aoahi
+                                if (txtEnable==true) log.info "${device.displayName} 'silence' state (dp=${cmd}) is: ${value}"
+                                sendBatteryStateEvent( value )
                                 break
                             default :
                                 if (logEnable==true) log.warn "Tuya unknown attribute: ${descMap.data[0]}${descMap.data[1]}=${descMap.data[2]}=${descMap.data[3]}${descMap.data[4]} data.size() = ${descMap.data.size()} value: ${value}}"
@@ -384,12 +293,8 @@ def parseZHAcommand( Map descMap) {
                 } // switch (descMap.clusterId)
             }  //command is read attribute response 01 or 02 (Tuya)
             break
-        
-        case "04" : //write attribute response
-            logDebug "parseZHAcommand writeAttributeResponse cluster: ${descMap.clusterId} status:${descMap.data[0]}"
-            break
         case "07" : // Configure Reporting Response
-            logDebug "Received Configure Reporting Response for cluster:${descMap.clusterId} , data=${descMap.data} (Status: ${descMap.data[0]=="00" ? 'Success' : '<b>Failure</b>'})"
+            if (logEnable==true) log.info "${device.displayName} Received Configure Reporting Response for cluster:${descMap.clusterId} , data=${descMap.data} (Status: ${descMap.data[0]=="00" ? 'Success' : '<b>Failure</b>'})"
             // Status: Unreportable Attribute (0x8c)
             break
         case "0B" : // ZCL Default Response
@@ -453,84 +358,85 @@ private int getAttributeValue(ArrayList _data) {
     return retValue
 }
 
-def close() {
-    state.isDigital = true
-    //log.trace "state.isDigital = ${state.isDigital}"
-    if (logEnable) {log.debug "${device.displayName} closing"}
-    //def cmds
-    ArrayList<String> cmds = []
-    if (isWaterIrrigationValve()) {
-        Short paramVal = 0
-        def dpValHex = zigbee.convertToHexString(paramVal as int, 2)
-        cmds = sendTuyaCommand("02", DP_TYPE_BOOL, dpValHex)
-        cmds += sendTuyaCommand("02", DP_TYPE_BOOL, dpValHex)
-        if (logEnable) log.debug "${device.displayName} closing WaterIrrigationValve cmds = ${cmds}"       
-    }
-    else if (state.model == "TS0601") {
-        cmds = sendTuyaCommand("01", DP_TYPE_BOOL, "00")
-    }
-    else {
-        cmds = zigbee.off()    // for all models that support the standard Zigbee OnOff cluster   
-    }
-    runInMillis( digitalTimer, clearIsDigital, [overwrite: true])
-    sendZigbeeCommands( cmds )
+def sendSmokeAlarmEvent( value, isDigital=false ) {    // attributes: smoke ("detected","clear","tested")    ea.STATE, true, false).withDescription('Smoke alarm status'),  [dp=1] 
+    def map = [:]
+    map.value = value==0 ? "detected" : value==1 ? "clear" : value==2 ? "tested" : null
+    map.name = "smoke"
+    map.unit = ""
+    map.type = isDigital == true ? "digital" : "physical"
+    map.isStateChange = true
+    map.descriptionText = "${map.name} is ${map.value}"
+    if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText}"}
+    sendEvent(map)
 }
 
-def open() {
-    state.isDigital = true
-    //log.trace "state.isDigital = ${state.isDigital}"
-    if (logEnable) {log.debug "${device.displayName} opening"}
+def sendTamperAlertEvent( value, isDigital=false ) {    // attributes: tamper - ENUM ["clear", "detected"]    [dp=4 ]  values 1/0
+    def map = [:]
+    map.value = value==0 ? "clear" : value==1 ? "detected" : null
+    map.name = "tamper"
+    map.unit = ""
+    map.type = isDigital == true ? "digital" : "physical"
+    map.isStateChange = true
+    map.descriptionText = "${map.name} is ${map.value}"
+    if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText}"}
+    sendEvent(map)
+}
+
+def sendBatteryStateEvent( value, isDigital=false ) {    // ea.STATE, ['low', 'middle', 'high']).withDescription('Battery level state'),    dp14 0=25% 1=50% 2=90% [dp=14] battery low   value 2 (FULL)
+    def map = [:]
+    map.value = value==0 ? 25 : value==1 ? "50" : value==2 ? "100" : null
+    map.name = "battery"
+    map.unit = "%"
+    map.type = isDigital == true ? "digital" : "physical"
+    map.isStateChange = true
+    map.descriptionText = "${map.name} is ${map.value} ${map.unit}"
+    if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText}"}
+    sendEvent(map)
+}
+
+
+def silenceSiren( state ) {    //  command "silenceSiren"  'Silence the siren' ea.STATE_SET, true, false)    HE->Tuya  dp=16, BOOL
+    if (logEnable) {log.debug "${device.displayName} silenceSiren ${state}"}
     ArrayList<String> cmds = []
-    if (isWaterIrrigationValve()) {
-        Short paramVal = 1
-        def dpValHex = zigbee.convertToHexString(paramVal as int, 2)
-        cmds = sendTuyaCommand("02", DP_TYPE_BOOL, dpValHex)
-        cmds += sendTuyaCommand("02", DP_TYPE_BOOL, dpValHex)
-        if (logEnable) log.debug "${device.displayName} opening WaterIrrigationValve cmds = ${cmds}"       
-    }
-    else if (state.model == "TS0601") {
-        cmds = sendTuyaCommand("01", DP_TYPE_BOOL, "01")
+    def dpVal = state=="true" ? 1 : state=="false" ? 0 : null
+    if (dpVal != null) {
+        def dpValHex = zigbee.convertToHexString(dpVal, 2)
+        cmds = sendTuyaCommand("10", DP_TYPE_BOOL, dpValHex)
+        sendZigbeeCommands( cmds )
     }
     else {
-        cmds =  zigbee.on()
+        if (txtEnable) {log.warn "${device.displayName} silenceSiren : please select true or false"}
     }
-    runInMillis( digitalTimer, clearIsDigital, [overwrite: true])
-    sendZigbeeCommands( cmds )
+}
+
+def enableAlarm( state ) {    //  command "enableAlarm"         //'Enable the alarm' ea.STATE_SET, true, false       HE->Tuya  dp=20, ENUM, true: 0, false: 1
+    if (logEnable) {log.debug "${device.displayName} silenceSiren ${state}"}
+    ArrayList<String> cmds = []
+    def dpVal = state=="true" ? 1 : state=="false" ? 0 : null
+    if (dpVal != null) {
+        def dpValHex = zigbee.convertToHexString(dpVal, 2)
+        cmds = sendTuyaCommand("14", DP_TYPE_ENUM, dpValHex)
+        sendZigbeeCommands( cmds )
+    }
+    else {
+        if (txtEnable) {log.warn "${device.displayName} enableAlarm : please select true or false"}
+    }
 }
 
 def sendBatteryEvent( roundedPct, isDigital=false ) {
     sendEvent(name: 'battery', value: roundedPct, unit: "%", type:  isDigital == true ? "digital" : "physical", isStateChange: true )    
 }
 
-
-def clearIsDigital() { state.isDigital = false; /*log.trace "clearIsDigital()"*/ }
-def switchDebouncingClear() { state.switchDebouncing = false; /*log.trace "switchDebouncingClear()" */ }
-
-def isRefreshRequestClear() { state.isRefreshRequest = false }
-
-
-// * PING is used by Device-Watch in attempt to reach the Device
-def ping() {
-    return refresh()
+def clear() {
+    sendSmokeAlarmEvent( 1, isDigital=true )
 }
 
-// Sends refresh / readAttribute commands to the device
-def poll() {
-    if (logEnable) {log.trace "${device.displayName} polling.."}
-    checkDriverVersion()
-    List<String> cmds = []
-    state.isRefreshRequest = true
-    if (device.getDataValue("model") != 'TS0601') {
-        cmds = zigbee.onOffRefresh()
-    }
-    runInMillis( refreshTimer, isRefreshRequestClear, [overwrite: true])           // 3 seconds
-    return cmds
+def detected() {
+    sendSmokeAlarmEvent( 0, isDigital=true )
 }
 
-
-def refresh() {
-    if (logEnable) {log.debug "${device.displayName} sending refresh() command..."}
-    poll()
+def tested() {
+    sendSmokeAlarmEvent( 2, isDigital=true )
 }
 
 
@@ -546,30 +452,9 @@ def tuyaBlackMagic() {
 */
 def configure() {
     if (txtEnable==true) log.info "${device.displayName} configure().."
+    runIn( defaultPollingInterval, pollPresence, [overwrite: true])
     List<String> cmds = []
     cmds += tuyaBlackMagic()
-    cmds += refresh()
-    cmds += zigbee.onOffConfig()    // TODO - skip for TS0601 device types !
-    
-    if (settings?.powerOnBehaviour != null) {
-        def modeName =  powerOnBehaviourOptions.find{it.key==settings?.powerOnBehaviour}
-        if (modeName != null) {
-            logDebug "setting powerOnBehaviour to ${modeName.value} (${settings?.powerOnBehaviour})"
-            cmds += zigbee.writeAttribute(0xE001, 0xD010, DataType.ENUM8, (byte) safeToInt(settings?.powerOnBehaviour), [:], delay=251)
-            //cmds += zigbee.readAttribute(0xE001, 0xD010, [:], delay=101)
-        }
-    }
-    /*
-    if (settings?.switchType != null) {
-        def modeName =  switchTypeOptions.find{it.key==settings?.switchType}
-        if (modeName != null) {
-            logDebug "setting switchType to ${modeName.value} (${settings?.switchType})"
-            cmds += zigbee.writeAttribute(0xE001, 0xD030, DataType.ENUM8, (byte) safeToInt(settings?.switchType), [:], delay=252)
-            //cmds += zigbee.readAttribute(0xE001, 0xD030, [:], delay=101)
-        }
-    }
-    */
-    
     sendZigbeeCommands(cmds)
 }
 
@@ -577,16 +462,16 @@ def configure() {
 // This method is called when the preferences of a device are updated.
 def updated(){
     if (txtEnable==true) log.info "Updating ${device.getLabel()} (${device.getName()}) model ${state.model} "
-    if (txtEnable==true) log.info "Debug logging is <b>${logEnable}</b> Description text logging is  <b>${txtEnable}</b>"
+    if (txtEnable==true) log.info "${device.displayName} Debug logging is <b>${logEnable}</b> Description text logging is  <b>${txtEnable}</b>"
     if (logEnable==true) {
-        runIn(/*1800*/86400, logsOff, [overwrite: true])    // turn off debug logging after /*30 minutes*/24 hours
-        if (txtEnable==true) log.info "Debug logging will be automatically switched off after 24 hours"
+        runIn(86400, logsOff, [overwrite: true])
+        if (txtEnable==true) log.info "${device.displayName} Debug logging will be automatically switched off after 24 hours"
     }
     else {
         unschedule(logsOff)
     }
 
-    if (txtEnable==true) log.info "configuring the switch and energy reporting.."
+    if (txtEnable==true) log.info "updated()..."
     configure()
 }
 
@@ -603,16 +488,11 @@ void initializeVars( boolean fullInit = true ) {
     state.rxCounter = 0
     state.txCounter = 0
     
-    if (fullInit == true || state.lastSwitchState == null) state.lastSwitchState = "unknown"
-    //if (fullInit == true || state.lastPresenceState == null) state.lastPresenceState = "unknown"
     if (fullInit == true || state.notPresentCounter == null) state.notPresentCounter = 0
     if (fullInit == true || state.isDigital == null) state.isDigital = true
-    if (fullInit == true || state.switchDebouncing == null) state.switchDebouncing = false    
-    if (fullInit == true || state.isRefreshRequest == null) state.isRefreshRequest = false
     if (fullInit == true || device.getDataValue("logEnable") == null) device.updateSetting("logEnable", true)
     if (fullInit == true || device.getDataValue("txtEnable") == null) device.updateSetting("txtEnable", true)
-    if (fullInit == true || settings?.powerOnBehaviour == null) device.updateSetting("powerOnBehaviour", [value:"2", type:"enum"])    // last state
-    if (fullInit == true || settings?.switchType == null) device.updateSetting("switchType", [value:"0", type:"enum"])                // toggle
+
 
     def mm = device.getDataValue("model")
     if ( mm != null) {
@@ -656,13 +536,17 @@ def initialize() {
     unschedule()
     initializeVars(fullInit = false)
     updated()            // calls also configure()
-    runIn( 12, logInitializeRezults, [overwrite: true])
+    runIn( 5, logInitializeRezults, [overwrite: true])
 }
 
 // This method is called when the device is first created.
 def installed() {
     if (txtEnable==true) log.info "${device.displayName} Installed()..."
     initializeVars()
+    def descText = 'driver just installed'
+    sendEvent(name: 'smoke', value: 'unknown', descriptionText: descText, type:  'digital' , isStateChange: true )    
+    sendEvent(name: "presence", value: "unknown", descriptionText: descText, type:  'digital' , isStateChange: true )
+    sendEvent(name: "powerSource", value: "unknown", descriptionText: descText, type:  'digital' , isStateChange: true )    
     runIn( 5, initialize, [overwrite: true])
     if (logEnable==true) log.debug "calling initialize() after 5 seconds..."
     // HE will autoomaticall call configure() method here
@@ -676,26 +560,37 @@ void uninstalled() {
 
 // called when any event was received from the Zigbee device in parse() method..
 def setPresent() {
-    //if (state.lastPresenceState != "present") {
-    	sendEvent(name: "powerSource", value: "dc") 
-        state.lastPresenceState = "present"
-    //}
+    if (device.currentValue("presence", true) != "present") {
+    	sendEvent(name: "presence", value: "present") 
+    	sendEvent(name: "powerSource", value: "battery") 
+    }
     state.notPresentCounter = 0
 }
 
-// called from autoPoll()
+// called from pollPresence()
 def checkIfNotPresent() {
     if (state.notPresentCounter != null) {
         state.notPresentCounter = state.notPresentCounter + 1
-        if (state.notPresentCounter > presenceCountTreshold) {
-            if (state.lastPresenceState != "not present") {
+        if (state.notPresentCounter >= presenceCountTreshold) {
+            if (device.currentValue("presence", true) != "not present") {
+    	        sendEvent(name: "presence", value: "not present")
     	        sendEvent(name: "powerSource", value: "unknown")
-                state.lastPresenceState = "not present"
-                if (logEnable==true) log.warn "not present!"
+                if (logEnable==true) log.warn "${device.displayName} not present!"
             }
         }
     }
+    else {
+        state.notPresentCounter = 1
+    }
 }
+
+// check for device offline every 60 minutes
+def pollPresence() {
+    if (logEnable) log.debug "${device.displayName} pollPresence()"
+    checkIfNotPresent()
+    runIn( defaultPollingInterval, pollPresence, [overwrite: true])
+}
+
 
 
 private getPACKET_ID() {
@@ -705,7 +600,6 @@ private getPACKET_ID() {
 
 private sendTuyaCommand(dp, dp_type, fncmd) {
     ArrayList<String> cmds = []
-    //cmds += zigbee.command(CLUSTER_TUYA, SETDATA, PACKET_ID + dp + dp_type + zigbee.convertToHexString((int)(fncmd.length()/2), 4) + fncmd )
     cmds += zigbee.command(CLUSTER_TUYA, SETDATA, [:], delay=200, PACKET_ID + dp + dp_type + zigbee.convertToHexString((int)(fncmd.length()/2), 4) + fncmd )
     if (settings?.logEnable) log.trace "${device.displayName} sendTuyaCommand = ${cmds}"
     if (state.txCounter != null) state.txCounter = state.txCounter + 1
@@ -734,28 +628,18 @@ boolean isTuyaE00xCluster( String description )
         return false 
     }
     // try to parse ...
-    logDebug "Tuya cluster: E000 or E001 - try to parse it..."
+    if (logEnable) log.debug "${device.displayName}  Tuya cluster: E000 or E001 - try to parse it..."
     def descMap = [:]
     try {
         descMap = zigbee.parseDescriptionAsMap(description)
     }
     catch ( e ) {
-        logWarn "<b>exception</b> caught while parsing description:  ${description}"
-        logDebug "TuyaE00xCluster Desc Map: ${descMap}"
+        log.warn "${device.displayName} <b>exception</b> caught while parsing description:  ${description}"
+        if (logEnable==true) log.debug "${device.displayName} TuyaE00xCluster Desc Map: ${descMap}"
         // cluster E001 is the one that is generating exceptions...
         return true
     }
-    if (descMap.cluster == "E001" && descMap.attrId == "D010") {
-        
-        logInfo "power on behavior is <b>${powerOnBehaviourOptions[safeToInt(descMap.value).toString()]}</b> (${descMap.value})"
-    }
-    else if (descMap.cluster == "E001" && descMap.attrId == "D030") {
-        logInfo "swith type is <b>${switchTypeOptions[safeToInt(descMap.value).toString()]}</b> (${descMap.value})"
-    }
-    else {
-        logDebug "<b>unprocessed</b> TuyaE00xCluster Desc Map: $descMap"
-    }
-    
+    if (logEnable==true) {log.debug "${device.displayName} TuyaE00xCluster Desc Map: $descMap"}
     
     //
     return true
@@ -763,72 +647,8 @@ boolean isTuyaE00xCluster( String description )
 
 boolean otherTuyaOddities( String description )
 {
-    return false    // !!!!!!!!!!!
-    if(description.indexOf('cluster: 0000') >= 0 || description.indexOf('attrId: 0004') >= 0) {
-        if (logEnable) log.debug " other Tuya oddities - don't know how to handle it, skipping it for now..."
-        return true
-    }
-    else
-        return false
+    return false
 }
-
-Integer safeToInt(val, Integer defaultVal=0) {
-	return "${val}"?.isInteger() ? "${val}".toInteger() : defaultVal
-}
-
-Double safeToDouble(val, Double defaultVal=0.0) {
-	return "${val}"?.isDouble() ? "${val}".toDouble() : defaultVal
-}
-
-def logDebug(msg) {
-    if (settings?.logEnable) {
-        log.debug "${device.displayName} " + msg
-    }
-}
-
-def logInfo(msg) {
-    if (settings?.txtEnable) {
-        log.info "${device.displayName} " + msg
-    }
-}
-
-def logWarn(msg) {
-    if (settings?.logEnable) {
-        log.warn "${device.displayName} " + msg
-    }
-}
-
-
-/*
-    attributes = TuyaMCUCluster.attributes.copy()
-    attributes.update(
-        {
-            0xEF01: ("time_left", t.uint32_t, True),
-            0xEF02: ("state", t.enum8, True),
-            0xEF03: ("last_valve_open_duration", t.uint32_t, True),
-            0xEF04: ("dp_6", t.uint32_t, True),
-        }
-    )
-
-
-https://github.com/sprut/Hub/issues/1068
-0006_OnOff
-    0000_OnOff: true
-    4001_OnTime: 0
-    4002_OffWaitTime: 0
-    8001_IndicatorMode: 1
-    8002_RestartStatus: 2
-
-E000_ManufacturerSpecific
-    D001_Custom: ByteArray [value=00 06]
-    D002_Custom: ByteArray [value=00 0A]
-    D003_Custom: AAAA
-
-E001_ManufacturerSpecific
-    D030_Custom: 2
-
-*/
-
 
 def test( dpCommand, dpValue, dpTypeString ) {
     ArrayList<String> cmds = []

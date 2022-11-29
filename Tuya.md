@@ -87,6 +87,7 @@
 |  Button TS0041 ![image](https://user-images.githubusercontent.com/6189950/155110780-3164615a-94e0-498b-aeb7-75c9d99dba08.png) |  https://www.aliexpress.com/item/1005002283147125.html <br> Hubitat inbuilt driver |
 | ZigBee Scene Switch, 3 Buttons ![image](https://user-images.githubusercontent.com/6189950/155200952-c6d8dc64-ffc4-4581-96ed-661d41fbba9f.png)  | Amazon: https://www.amazon.de/-/en/ZigBee-Wireless-Buttons-Control-Batteries/dp/B0977KK7ZP  |
 | LoraTap 6 Button Gang Scene Switch ![image](https://user-images.githubusercontent.com/6189950/166911477-960eddc5-b750-4bd1-a93e-25796ac1cb8d.png) | AliExpres: [(link)](https://www.aliexpress.com/item/1005003731082631.html) | 
+| icasa Zigbee 3.0 wireless wall controller ![image](https://user-images.githubusercontent.com/6189950/198963909-f8d10968-166b-446c-86f3-fffb296d1e03.png)| https://www.amazon.co.uk/wireless-controller-Dimming-Compatible-Gateway/dp/B07L2SLY29?ref_=ast_sto_dp |
 
 ------------------------------
 
@@ -137,6 +138,7 @@
 | NEO Coolcam Water Leak Sensor ![image](https://user-images.githubusercontent.com/6189950/160272275-4dfbbae7-60d9-445e-83a2-97d0dcd8b5ae.png) | Model: TS0601 <br> Manufacturer:  \_TZE200_qq9mpfhw <br> WalMart: https://www.walmart.com/ip/NEO-Tuya-ZigBee-Smart-Home-Water-Leak-Sensor-Wireless-Flooding-Detector-Leakage-Detection-Alert-Level-Overflow-Alarm-Life-App-Remote-Control-Works-Wi/374860039 <br> Hubitat: https://community.hubitat.com/t/tuya-water-sensor-aka-blitzwolf-paired-as-device/71765 <br> Driver: (GitHub [Link](https://raw.githubusercontent.com/kkossev/Hubitat/main/Drivers/Tuya%20NEO%20Coolcam%20Zigbee%20Water%20Leak%20Sensor/Tuya%20NEO%20Coolcam%20Zigbee%20Water%20Leak%20Sensor.groovy)) |
 | Water Leak Sensor ![image](https://user-images.githubusercontent.com/6189950/155128556-0871993b-14c6-4ab2-8646-1a0ba0db34f4.png) | Model: TS0207 <br> Manufacturer:  \_TYZB01_sqmd19i1 <br> AliExpres: https://www.aliexpress.com/item/1005002011778104.html <br> Amazon:https://www.amazon.de/-/en/TOOGOO-Wireless-Detector-Control-Compatible/dp/B08T9NP9NM <br> Hubitat: https://community.hubitat.com/t/tuya-water-sensor-aka-blitzwolf-paired-as-device/71765 <br> Driver: HE inbuilt "Generic Zigbee Moisture Sensor" |
 | Water Leak Sensor ![image](https://user-images.githubusercontent.com/6189950/160271960-2b607c8d-e048-44b7-8976-7833d453947f.png) | Model: TS0207 <br> Manufacturer:  \_TZ3000_upgcbody <br> AliExpres: https://www.aliexpress.com/item/1005003926982178.html? <br>  |
+|MEIAN Water Leak Sensor <br>  ![image](https://user-images.githubusercontent.com/6189950/201920407-0fd6ca0b-6f42-44aa-be0d-5ddc3fae8684.png) |  Model: TS0207 <br> Manufacturer: _TZ3000_kyb656no <br> AliExpress: [(link)](https://www.aliexpress.com/item/1005004662495000.html) |
 
 ----------------------------
 

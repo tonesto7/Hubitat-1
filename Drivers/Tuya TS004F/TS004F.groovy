@@ -27,14 +27,15 @@
  * ver. 2.4.2 2022-05-07 kkossev     - added LoraTap 6 button Scene Controller; device.getDataValue bug fix;
  * ver. 2.4.3 2022-09-18 kkossev     - added TS0042 Tuya Zigbee 2 Gang Wireless Smart Switch; removed 'release' event for TS0044 switches (not supported by hardware); 'release' digital event bug fix.
  * ver. 2.4.4 2022-10-22 kkossev     - _TZ3000_vp6clf9d fingerprint correction; importURL changed to dev. branch; added _TZ3000_w8jwkczz and other TS0041, TS0042, TS0043, TS004 fingerprints
- * ver. 2.4.5 2022-10-27 kkossev     - (dev. branch) icasa ICZB-KPD18S 8 button tests ICZB-KPD18S-QUICK 8 button controller.
+ * ver. 2.4.5 2022-10-27 kkossev     - added icasa ICZB-KPD18S 8 button controller.
+ * ver. 2.4.6 2022-11-20 kkossev     - added TS004F _TZ3000_ja5osu5g - 1 button!; isTuya() bug fix
  *
  *                                   - TODO: add Advanced options; TODO: debounce timer configuration; TODO: show Battery events in the logs; TODO: remove Initialize, replace with Configure
  *
  */
 
-def version() { "2.4.5" }
-def timeStamp() {"2022/10/27 10:59 PM"}
+def version() { "2.4.6" }
+def timeStamp() {"2022/11/20 10:53 AM"}
 
 @Field static final Boolean debug = false
 
@@ -75,6 +76,7 @@ metadata {
     fingerprint inClusters: "0000,0001,0006", outClusters: "0019,000A", manufacturer: "_TZ3000_adkvzooy", model: "TS0041", deviceJoinName: "Zigbee Tuya 1 Button" // not tested
     fingerprint inClusters: "0000,000A,0001,0006", outClusters: "0019,000A", manufacturer: "_TZ3000_peszejy7", model: "TS0041", deviceJoinName: "Zigbee Tuya 1 Button"
     fingerprint inClusters: "0000,0001,0006", outClusters: "0019", manufacturer: "_TYZB02_key8kk7r", model: "TS0041", deviceJoinName: "Zigbee Tuya 1 Button"
+ 	fingerprint inClusters: "0000,0001,0003,0004,0006,1000,E001", outClusters: "0019,000A,0003,0004,0006,0008,1000", manufacturer: "_TZ3000_ja5osu5g", model: "TS004F", deviceJoinName: "MOES Smart Button (ZT-SY-SR-MS)" // MOES ZigBee IP55 Waterproof Smart Button Scene Switch & Wireless Remote Dimmer (ZT-SY-SR-MS)
         
     fingerprint profileId:"0104", endpointId:"01", inClusters:"0001,0006,E000,0000", outClusters:"0019,000A", model:"TS0042", manufacturer:"_TZ3000_tzvbimpq", deviceJoinName: "Tuya 2 button Scene Switch"
     fingerprint profileId:"0104", endpointId:"01", inClusters:"0001,0006,E000,0000", outClusters:"0019,000A", model:"TS0042", manufacturer:"_TZ3000_t8hzpgnd", deviceJoinName: "Tuya 2 button Scene Switch"    // not tested
@@ -118,6 +120,7 @@ metadata {
         input (name: "reverseButton", type: "bool", title: "Reverse button order", defaultValue: true)
         input (name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: false)
         input (name: "txtEnable", type: "bool", title: "Enable description text logging", defaultValue: true)
+        input (name: "advancedOptions", type: "bool", title: "Advanced options", defaultValue: false)
     }
 }
 
@@ -126,7 +129,7 @@ metadata {
 @Field static final Integer SCENE_MODE  = 1
 @Field static final Integer DEBOUNCE_TIME = 1000
 
-def isTuya()  {debug == true ? false : device.getDataValue("manufacturer") in ["TS0601", "TS004F", "TS0044", "TS0043", "TS0042", "TS0041"]}
+def isTuya()  {debug == true ? false : device.getDataValue("model") in ["TS0601", "TS004F", "TS0044", "TS0043", "TS0042", "TS0041"]}
 def isIcasa() {debug == true ? true : device.getDataValue("manufacturer") == "icasa"}
 
 // Parse incoming device messages to generate events
@@ -371,7 +374,7 @@ def initialize() {
     }
     def numberOfButtons = 4
     def supportedValues = ["pushed", "double", "held"]
-    if (device.getDataValue("model") == "TS0041") {
+    if (device.getDataValue("model") == "TS0041" || device.getDataValue("manufacturer") =="_TZ3000_ja5osu5g") {
     	numberOfButtons = 1
     }
     else if (device.getDataValue("model") == "TS0042") {
