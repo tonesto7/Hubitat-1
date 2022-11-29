@@ -23,13 +23,13 @@
  * ver. 1.0.9 2022-10-02 kkossev  - configure _TZ2000_a476raq2 reporting time; added TS0601 _TZE200_bjawzodf; code cleanup
  * ver. 1.0.10 2022-10-11 kkossev - '_TZ3000_itnrsufe' reporting configuration bug fix?; reporting configuration result Info log; added Sonoff SNZB-02 fingerprint; reportingConfguration is sent on pairing to HE;
  * ver. 1.0.11 2022-10-31 kkossev - added _TZE200_whkgqxse; fingerprint correction; _TZ3000_bguser20 _TZ3000_fllyghyj _TZ3000_yd2e749y _TZ3000_6uzkisv2
- * ver. 1.1.0  2022-11-29 kkossev - (test branch) - added _info_ attribute
+ * ver. 1.1.0  2022-11-29 kkossev - (test branch) - added _info_ attribute; delayed reporting configuration when the sleepy device wakes up.
  *
  *
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/11/29 3:37 PM"}
+def timeStamp() {"2022/11/29 9:43 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -99,6 +99,7 @@ metadata {
                 "TS0222_2":"TS0222_2", "TS0201_TH":"TS0201_TH", "Zigbee NON-Tuya":"Zigbee NON-Tuya"])
         input (name: "advancedOptions", type: "bool", title: "Advanced options", description: "May not be supported by all devices!", defaultValue: false)
         if (advancedOptions == true) {
+            input (title: "To configure a sleepy device, try any of the methods below :", description: "<b> * Rapidly change the temperature or the humidity<br> * Remove the battery for at least 1 minute<br> * Pair the device again to HE</b>", type: "paragraph", element: "paragraph")        
             configParams.each {
                 //log.warn "it.value.input.limit = ${it.value.input.limit}"
                 if (it.value.input.limit == null || 'ALL' in it.value.input.limit || getModelGroup() in it.value.input.limit) {
@@ -741,7 +742,7 @@ def updated() {
     state.modelGroup = getModelGroup()
 
     if (settings?.txtEnable) log.info "${device.displayName} Updating ${device.getLabel()} (${device.getName()}) model ${device.getDataValue('model')} manufacturer <b>${device.getDataValue('manufacturer')}</b> modelGroupPreference = <b>${modelGroupPreference}</b> (${getModelGroup()})"
-    if (settings?.txtEnable) log.info "${device.displayName} Debug logging is <b>${logEnable}</b>; Description text logging is <b>${txtEnable}</b>"
+    if (settings?.txtEnable) log.info "${device.displayName} Debug logging is ${logEnable}; Description text logging is ${txtEnable}"
     if (logEnable==true) {
         runIn(86400, "logsOff", [overwrite: true, misfire: "ignore"])    // turn off debug logging after 30 minutes
         if (settings?.txtEnable) log.info "${device.displayName} Debug logging is will be turned off after 24 hours"
@@ -895,7 +896,7 @@ def ConfigurationStateMachine() {
             if (isPendingConfig()) {
                 logDebug "configuration pending ..."
                 updateInfo("sending the reporting configuration...") 
-                lastTxMap.cfgTimer = 15
+                lastTxMap.cfgTimer = 10
                 updated()
                 runIn(1, "configTimer" , [overwrite: true, misfire: "ignore"])
                 configState = 1
