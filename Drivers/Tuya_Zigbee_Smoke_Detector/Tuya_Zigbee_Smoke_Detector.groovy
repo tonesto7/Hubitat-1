@@ -15,7 +15,7 @@
  *
  *  ver. 1.0.0 2022-10-29 kkossev - inital version for _TZE200_ntcy3xu1
  *  ver. 1.0.1 2022-10-31 kkossev - added _TZE200_uebojraa
- *  ver. 1.0.2 2022-11-17 kkossev - notPresentCounter set to 12 hours; states set to 'unknown' on device creation'; added Clear Detected Tested buttons; removed Configure button
+ *  ver. 1.0.2 2022-11-17 kkossev - (dev.branch)notPresentCounter set to 12 hours; states set to 'unknown' on device creation'; added Clear Detected Tested buttons; removed Configure button
  *
  *
  */
