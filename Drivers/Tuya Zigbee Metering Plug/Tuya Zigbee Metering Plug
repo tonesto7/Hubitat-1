@@ -2051,3 +2051,100 @@ def setEnergyMeterMode( mode ) {
 }
 
 
+/*
+https://github.com/Koenkk/zigbee-herdsman/blob/4453c0a3f67cf03610f921ab66cefc19c7be88e7/src/zcl/definition/cluster.ts :
+
+            develcoPulseConfiguration: {ID: 0x0300, type: DataType.uint16, manufacturerCode: ManufacturerCode.DEVELCO},
+            develcoCurrentSummation: {ID: 0x0301, type: DataType.uint48, manufacturerCode: ManufacturerCode.DEVELCO},
+            develcoInterfaceMode: {ID: 0x0302, type: DataType.enum16, manufacturerCode: ManufacturerCode.DEVELCO},
+
+
+if (description?.startsWith("read attr -")) {
+	def descMap = zigbee.parseDescriptionAsMap(description)
+    log.debug "Desc Map: $descMap"
+    if (descMap.clusterInt == zigbee.ELECTRICAL_MEASUREMENT_CLUSTER) {
+    	def intVal = Integer.parseInt(descMap.value,16)
+    	if (descMap.attrInt == 0x0600) {
+        	log.debug "ACVoltageMultiplier $intVal"
+            state.voltageMultiplier = intVal
+        } else if (descMap.attrInt == 0x0601) {
+        	log.debug "ACVoltageDivisor $intVal"
+            state.voltageDivisor = intVal
+        } else if (descMap.attrInt == 0x0602) {
+        	log.debug "ACCurrentMultiplier $intVal"
+            state.currentMultiplier = intVal
+        } else if (descMap.attrInt == 0x0603) {
+        	log.debug "ACCurrentDivisor $intVal"
+            state.currentDivisor = intVal
+        } else if (descMap.attrInt == 0x0604) {
+        	log.debug "ACPowerMultiplier $intVal"
+            state.powerMultiplier = intVal
+        } else if (descMap.attrInt == 0x0605) {
+        	log.debug "ACPowerDivisor $intVal"
+            state.powerDivisor = intVal
+        } else if (descMap.attrInt == 0x0505) {
+            def voltageValue = intVal * getVoltageMultiplier()
+            log.debug "Voltage ${voltageValue}"
+            state.voltage = $voltageValue
+            sendEvent(name: "voltage", value: voltageValue)
+        } else if (descMap.attrInt == 0x0508) {
+            def currentValue = intVal * getCurrentMultiplier()
+            log.debug "Current ${currentValue}"
+            state.current = $currentValue
+            sendEvent(name: "current", value: currentValue)
+        }
+    } else {
+    	log.warn "Not an electrical measurement"
+    }
+}
+
+def currentMeasurementConfig(minReportTime=1, maxReportTime=600, reportableChange=0x0030) {
+zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, 0x0508, DataType.UINT16, minReportTime, maxReportTime, reportableChange)
+}
+
+
+def voltageMeasurementConfig(minReportTime=1, maxReportTime=600, reportableChange=0x0018) {
+zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, 0x0505, DataType.UINT16, minReportTime, maxReportTime, reportableChange)
+}
+
+
+Integer minReportTime = 0
+	Integer maxReportTime = 180
+	Integer reportableChange = null
+	Integer batteryAttr = isFrientSensor() ? BATTERY_VOLTAGE_ATTR : BATTERY_PERCENT_ATTR
+	Integer batteryReportChange = isFrientSensor() ? 0x1 : 0x10
+	return refresh() + 
+			zigbee.enrollResponse() +
+			zigbee.configureReporting(zigbee.POWER_CONFIGURATION_CLUSTER, batteryAttr, DataType.UINT8, 30, 1200, batteryReportChange) +
+			zigbee.configureReporting(zigbee.IAS_ZONE_CLUSTER, zigbee.ATTRIBUTE_IAS_ZONE_STATUS, DataType.BITMAP16, minReportTime, maxReportTime, reportableChange)
+
+
+
+
+    cmds += zigbee.writeAttribute(0x0000, 0xffde, 0x20, 0x0d, [destEndpoint :ep], delay=50)    // seq 3
+    cmds += zigbee.writeAttribute(0x0000, 0xffde, 0x20, 0x0d, [destEndpoint :ep], delay=50)    // seq 4
+    cmds += zigbee.writeAttribute(0x0000, 0xffde, 0x20, 0x0d, [destEndpoint :ep], delay=50)    // seq 5
+
+    cmds += zigbee.readAttribute(0x0006, [0x0000, 0x4001, 0x4002, 0x5000, 0x8000, 0x8001, 0x8002, 0x8003], [destEndpoint :ep], delay=50)    // seq 6
+    cmds += zigbee.readAttribute(0x0b04, [0x0508, 0x050b, 0x0505], [destEndpoint :ep], delay=50)    // seq 7
+    cmds += zigbee.readAttribute(0x0702, 0x0000, [destEndpoint :ep], delay=50)    // seq 8
+    cmds += zigbee.readAttribute(0x0006, [0x4001, 0x4002], [destEndpoint :ep], delay=50)    // seq 9
+    cmds += zigbee.readAttribute(0x0b04, [0x0505, 0x0508, 0x050b], [destEndpoint :ep], delay=50)    // seq 10
+
+    cmds += ["he raw 0x${device.deviceNetworkId} 0 0 0x8002 {40 00 00 00 00 40 8f 02 10 52 52 00 41 2c 52 00 00} {0x0000}", "delay 150",]
+    cmds += zigbee.readAttribute(0x0000, [0x0004, 0x0000, 0x0001, 0x0005, 0x0007, 0xfffe], [destEndpoint :255], delay=150) // destEndpoint: 255 ??? seq 2   // Cluster: Basic, attributes: Man.name, ZLC ver, App ver, Model Id, Power Source, attributeReportingStatus
+    cmds += ["he raw 0x${device.deviceNetworkId} 0 0 0x8002 {40 00 00 00 00 40 8f 02 10 52 52 00 41 2c 52 00 00} {0x0000}", "delay 150",]
+    cmds += zigbee.readAttribute(0x0000, [0x0004, 0x0000, 0x0001, 0x0005, 0x0007, 0xfffe], [destEndpoint :255], delay=150) // destEndpoint: 255 ??? seq 2   // Cluster: Basic, attributes: Man.name, ZLC ver, App ver, Model Id, Power Source, attributeReportingStatus
+  //cmds += ["he raw 0x${device.deviceNetworkId} 0 0 0x8002 {40 00 00 00 00 40 8f 5f 11 52 52 00 41 2c 52 00 00} {0x0000}", "delay 50",]
+    cmds += ["he raw 0x${device.deviceNetworkId} 0 0 0x8002 {40 00 00 00 00 40 8f 02 10 52 52 00 41 2c 52 00 00} {0x0000}", "delay 50",]
+    cmds += ["he raw 0x${device.deviceNetworkId} 0 0 0x8002 {40 00 00 00 00 40 8f 02 10 52 52 00 41 2c 52 00 00} {0x0000}", "delay 50",]
+    cmds += zigbee.readAttribute(0x0000, [0x0004, 0x0000, 0x0001, 0x0005, 0x0007, 0xfffe], [destEndpoint :255], delay=50) // destEndpoint: 255 ??? seq 2   // Cluster: Basic, attributes: Man.name, ZLC ver, App ver, Model Id, Power Source, attributeReportingStatus
+    cmds += ["he raw 0x${device.deviceNetworkId} 0 0 0x8002 {40 00 00 00 00 40 8f 02 10 52 52 00 41 2c 52 00 00} {0x0000}", "delay 50",]
+    cmds += zigbee.readAttribute(0x0000, [0x0004, 0x0000, 0x0001, 0x0005, 0x0007, 0xfffe], [destEndpoint :255], delay=50) // destEndpoint: 255 ??? seq 2   // Cluster: Basic, attributes: Man.name, ZLC ver, App ver, Model Id, Power Source, attributeReportingStatus
+    cmds += ["he raw 0x${device.deviceNetworkId} 0 0 0x8002 {40 00 00 00 00 40 8f 02 10 52 52 00 41 2c 52 00 00} {0x0000}", "delay 50",]
+    cmds += zigbee.readAttribute(0x0000, [0x0004, 0x0000, 0x0001, 0x0005, 0x0007, 0xfffe], [destEndpoint :255], delay=50) // destEndpoint: 255 ??? seq 2   // Cluster: Basic, attributes: Man.name, ZLC ver, App ver, Model Id, Power Source, attributeReportingStatus
+
+
+
+*/
+
