@@ -22,12 +22,14 @@
  *                                   added temperature and humidity offesets; configured parameters (including C/F HE scale) are sent to the device when paired again to HE; added Minimum time between temperature and humidity reports;
  * ver. 1.0.9 2022-10-02 kkossev  - configure _TZ2000_a476raq2 reporting time; added TS0601 _TZE200_bjawzodf; code cleanup
  * ver. 1.0.10 2022-10-11 kkossev - '_TZ3000_itnrsufe' reporting configuration bug fix?; reporting configuration result Info log; added Sonoff SNZB-02 fingerprint; reportingConfguration is sent on pairing to HE;
- * ver. 1.0.11 2022-10-31 kkossev  - (dev.branch) - added _TZE200_whkgqxse; fingerprint correction; _TZ3000_bguser20 _TZ3000_fllyghyj _TZ3000_yd2e749y _TZ3000_6uzkisv2
+ * ver. 1.0.11 2022-10-31 kkossev - (dev.branch) - added _TZE200_whkgqxse; fingerprint correction; _TZ3000_bguser20 _TZ3000_fllyghyj _TZ3000_yd2e749y _TZ3000_6uzkisv2
+ * ver. 1.1.0  2022-11-29 kkossev - (test branch) - added _info_ attribute
+ *
  *
 */
 
-def version() { "1.0.11" }
-def timeStamp() {"2022/11/17 7:28 AM"}
+def version() { "1.1.0" }
+def timeStamp() {"2022/11/29 2:52 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -58,6 +60,9 @@ metadata {
         */
         
         command "initialize", [[name: "Manually initialize the device after switching drivers.  \n\r     ***** Will load device default values! *****" ]]
+        
+        attribute   "_info_", "string"        // when defined as attributes, will be shown on top of the 'Current States' list ...
+        
 
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_lve3dvpy", deviceJoinName: "Tuya Temperature Humidity Illuminance LCD Display with a Clock"
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_c7emyjom", deviceJoinName: "Tuya Temperature Humidity Illuminance LCD Display with a Clock"
@@ -206,7 +211,8 @@ private getDP_TYPE_BITMAP()     { "05" }    // [ 1,2,4 bytes ] as bits
 // Parse incoming device messages to generate events
 def parse(String description) {
     checkDriverVersion()
-    if (state.rxCounter != null) state.rxCounter = state.rxCounter + 1
+    //if (state.rxCounter != null) state.rxCounter = state.rxCounter + 1
+    Map statsMap = stringToJsonMap(state.stats); try {statsMap['rxCtr']++ } catch (e) {statsMap['rxCtr']=0}; state.stats = mapToJsonString(statsMap)
     if (settings?.logEnable) log.debug "${device.displayName} parse() descMap = ${zigbee.parseDescriptionAsMap(description)}"
     if (description?.startsWith('catchall:') || description?.startsWith('read attr -')) {
         Map descMap = zigbee.parseDescriptionAsMap(description)
@@ -255,7 +261,8 @@ def parse(String description) {
             processTuyaCluster( descMap )
         }
         else if (descMap?.clusterId == "0013") {    // device announcement, profileId:0000
-            if (settings?.logEnable) log.warn "${device.displayName} device announcement"
+            logInfo "device announcement"
+            try {statsMap['rejoins']++ } catch (e) {statsMap['rejoins']=0}; state.stats = mapToJsonString(statsMap)            
             if (getModelGroup() == 'TS0222') {
                 configure()
             }
@@ -387,7 +394,7 @@ def processTuyaCluster( descMap ) {
         if (settings?.logEnable) log.trace "${device.displayName} now is: ${now()}"  // KK TODO - convert to Date/Time string!
         if (settings?.logEnable) log.debug "${device.displayName} sending time data : ${cmds}"
         cmds.each{ sendHubCommand(new hubitat.device.HubAction(it, hubitat.device.Protocol.ZIGBEE)) }
-        if (state.txCounter != null) state.txCounter = state.txCounter + 1
+        //if (state.txCounter != null) state.txCounter = state.txCounter + 1
     }
     else if (descMap?.clusterInt==CLUSTER_TUYA && descMap?.command == "0B") {    // ZCL Command Default Response
         String clusterCmd = descMap?.data[0]
@@ -601,13 +608,15 @@ def temperatureEvent( temperature, isDigital=false ) {
     map.type = isDigital == true ? "digital" : "physical"
     map.isStateChange = true
     map.descriptionText = "${map.name} is ${tempCorrected} ${map.unit}"
-    if (state.lastTemp == null ) state.lastTemp = now() - (minReportingTimeTemp * 2000)
-    def timeElapsed = Math.round((now() - state.lastTemp)/1000)
+    Map lastRxMap = stringToJsonMap(state.lastRx)
+    //if (state.lastTemp == null ) state.lastTemp = now() - (minReportingTimeTemp * 2000)
+    def timeElapsed = Math.round((now() - lastRxMap['tempTime']/*state.lastTemp*/)/1000)
     Integer timeRamaining = (minReportingTimeTemp - timeElapsed) as Integer
     if (timeElapsed >= minReportingTimeTemp) {
 		if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText}"}
 		unschedule(sendDelayedEventTemp)		//get rid of stale queued reports
-		state.lastTemp = now()
+		//state.lastTemp = now()
+        lastRxMap['tempTime'] = now()
         sendEvent(map)
 	}		
     else {         // queue the event
@@ -615,11 +624,13 @@ def temperatureEvent( temperature, isDigital=false ) {
         if (settings?.logEnable) log.debug "${device.displayName} DELAYING ${timeRamaining} seconds event : ${map}"
         runIn(timeRamaining, 'sendDelayedEventTemp',  [overwrite: true, data: map])
     }
+    state.lastRx = mapToJsonString(lastRxMap)
 }
 
 private void sendDelayedEventTemp(Map map) {
     if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText} (${map.type})"}
-	state.lastTemp = now()
+	//state.lastTemp = now()
+    Map lastRxMap = stringToJsonMap(state.lastRx); try {lastRxMap['tempTime'] = now()} catch (e) {lastRxMap['tempTime']=now()-(minReportingTimeHumidity * 2000)}; state.lastRx = mapToJsonString(lastRxMap)
     sendEvent(map)
 }
 
@@ -633,13 +644,14 @@ def humidityEvent( humidity, isDigital=false ) {
     map.type = isDigital == true ? "digital" : "physical"
     map.isStateChange = true
     map.descriptionText = "${map.name} is ${humidityAsDouble.round(1)} ${map.unit}"
-    if (state.lastHumi == null ) state.lastHumi = now() - (minReportingTimeHumidity * 2000)
-    def timeElapsed = Math.round((now() - state.lastHumi)/1000)
+    Map lastRxMap = stringToJsonMap(state.lastRx)
+    //if (state.lastHumi == null ) state.lastHumi = now() - (minReportingTimeHumidity * 2000)
+    def timeElapsed = Math.round((now() - lastRxMap['humiTime'])/1000)
     Integer timeRamaining = (minReportingTimeHumidity - timeElapsed) as Integer
     if (timeElapsed >= minReportingTimeHumidity) {
         if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText}"}
         unschedule(sendDelayedEventHumi)
-        state.lastHumi = now()
+        lastRxMap['humiTime'] = now()
         sendEvent(map)
     }
     else {         // queue the event 
@@ -647,11 +659,13 @@ def humidityEvent( humidity, isDigital=false ) {
         if (settings?.logEnable) log.debug "${device.displayName} DELAYING ${timeRamaining} seconds event : ${map}"
         runIn(timeRamaining, 'sendDelayedEventHumi',  [overwrite: true, data: map])
     }
+    state.lastRx = mapToJsonString(lastRxMap)
 }
 
 private void sendDelayedEventHumi(Map map) {
     if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText} (${map.type})"}
-	state.lastHumi = now()
+	//state.lastHumi = now()
+    Map lastRxMap = stringToJsonMap(state.lastRx); try {lastRxMap['humiTime'] = now()} catch (e) {lastRxMap['humiTime']=now()-(minReportingTimeHumidity * 2000)}; state.lastRx = mapToJsonString(lastRxMap)
 	sendEvent(map)
 }
 
@@ -678,6 +692,7 @@ def illuminanceEventLux( Integer lux, isDigital=false ) {
 
 //  called from initialize() and when installed as a new device
 def installed() {
+    sendEvent(name: "_info_", value: "installed", isStateChange: true)
     if (settings?.txtEnable) log.info "${device.displayName} installed()..."
     unschedule()
     initializeVars(fullInit = true )
@@ -697,7 +712,7 @@ def updated() {
     if (settings?.txtEnable) log.info "${device.displayName} Updating ${device.getLabel()} (${device.getName()}) model ${device.getDataValue('model')} manufacturer <b>${device.getDataValue('manufacturer')}</b> modelGroupPreference = <b>${modelGroupPreference}</b> (${getModelGroup()})"
     if (settings?.txtEnable) log.info "${device.displayName} Debug logging is <b>${logEnable}</b>; Description text logging is <b>${txtEnable}</b>"
     if (logEnable==true) {
-        runIn(86400, logsOff)    // turn off debug logging after 30 minutes
+        runIn(86400, logsOff, [overwrite: true, misfire: "ignore"])    // turn off debug logging after 30 minutes
         if (settings?.txtEnable) log.info "${device.displayName} Debug logging is will be turned off after 24 hours"
     }
     else {
@@ -802,7 +817,7 @@ def pollTS0222() {
 }
 
 def refresh() {
-    if (settings?.logEnable)  {log.debug "${device.displayName} refresh()..."}
+    checkDriverVersion()
     if (getModelGroup() == 'TS0222') {
         pollTS0222()
     }
@@ -814,21 +829,50 @@ def refresh() {
         sendZigbeeCommands( cmds )     
     }
     else {
-     //   zigbee.readAttribute(0, 1)
+        logInfo "refresh() is not implemented for this sleepy Zigbee device"
     }
 }
 
 def driverVersionAndTimeStamp() {version()+' '+timeStamp()}
 
 def checkDriverVersion() {
-    if (state.driverVersion != null && driverVersionAndTimeStamp() == state.driverVersion) {
-    }
-    else {
-        if (txtEnable==true) log.debug "${device.displayName} updating the settings from the current driver version ${state.driverVersion} to the new version ${driverVersionAndTimeStamp()}"
+    if (state.driverVersion == null || driverVersionAndTimeStamp() != state.driverVersion) {
+        logInfo "updating the settings from the current driver version ${state.driverVersion} to the new version ${driverVersionAndTimeStamp()}"
         initializeVars( fullInit = false )
+        //
+        if (state.rxCounter != null) state.remove("rxCounter")
+        if (state.txCounter != null) state.remove("txCounter")
+        if (state.lastRx == null || state.stats == null || state.lastTx == null) {
+            resetStats()
+        }
+
+        //
         state.driverVersion = driverVersionAndTimeStamp()
     }
 }
+
+def resetStats() {
+    Map stats = [
+        rxCtr : 0,
+        txCtr : 0,
+        rejoins: 0
+    ]
+    
+    Map lastRx = [
+        tempTime : now() - defaultMinReportingTime * 1000,
+        humiTime : now() - defaultMinReportingTime * 1000
+    ]
+    
+    Map lastTx = [
+        tempCfg : '',
+        humiCfg : ''
+    ]
+    state.stats  =  mapToJsonString( stats )
+    state.lastRx =  mapToJsonString( lastRx )
+    state.lastTx =  mapToJsonString( lastTx )
+    if (txtEnable==true) log.info "${device.displayName} Statistics were reset. Press F5 to refresh the device page"
+}
+
 
 def logInitializeRezults() {
     if (settings?.txtEnable) log.info "${device.displayName} manufacturer  = ${device.getDataValue("manufacturer")} ModelGroup = ${getModelGroup()}"
@@ -840,11 +884,12 @@ void initializeVars(boolean fullInit = true ) {
     log.info "${device.displayName} InitializeVars()... fullInit = ${fullInit}"
     if (fullInit == true ) {
         state.clear()
+        resetStats()
         state.driverVersion = driverVersionAndTimeStamp()
     }
     state.packetID = 0
-    state.rxCounter = 0
-    state.txCounter = 0
+    //state.rxCounter = 0
+    //state.txCounter = 0
 
     if (fullInit == true || settings?.modelGroupPreference == null) device.updateSetting("modelGroupPreference", [value:"Auto detect", type:"enum"])
     if (fullInit == true || settings?.logEnable == null) device.updateSetting("logEnable", true)
@@ -865,8 +910,8 @@ void initializeVars(boolean fullInit = true ) {
     if (fullInit == true || settings?.maxReportingTimeHumidity == null) device.updateSetting("maxReportingTimeHumidity",  [value:3600, type:"number"])
     //
     if (fullInit == true || state.modelGroup == null)  state.modelGroup = getModelGroup()
-    if (fullInit == true || state.lastTemp == null) state.lastTemp = now() - defaultMinReportingTime * 1000
-    if (fullInit == true || state.lastHumi == null) state.lastHumi = now() - defaultMinReportingTime * 1000
+    //if (fullInit == true || state.lastTemp == null) state.lastTemp = now() - defaultMinReportingTime * 1000
+    //if (fullInit == true || state.lastHumi == null) state.lastHumi = now() - defaultMinReportingTime * 1000
     
 }
 
@@ -899,7 +944,6 @@ private sendTuyaCommand(dp, dp_type, fncmd) {
     ArrayList<String> cmds = []
     cmds += zigbee.command(CLUSTER_TUYA, SETDATA, [:], delay=200, PACKET_ID + dp + dp_type + zigbee.convertToHexString((int)(fncmd.length()/2), 4) + fncmd )
     if (settings?.logEnable) log.trace "${device.displayName} sendTuyaCommand = ${cmds}"
-    if (state.txCounter != null) state.txCounter = state.txCounter + 1
     return cmds
 }
 
@@ -908,8 +952,9 @@ void sendZigbeeCommands(ArrayList<String> cmd) {
     hubitat.device.HubMultiAction allActions = new hubitat.device.HubMultiAction()
     cmd.each {
             allActions.add(new hubitat.device.HubAction(it, hubitat.device.Protocol.ZIGBEE))
-            if (state.txCounter != null) state.txCounter = state.txCounter + 1
+            //if (state.txCounter != null) state.txCounter = state.txCounter + 1
     }
+    Map statsMap = stringToJsonMap(state.stats); try {statsMap['txCtr']++ } catch (e) {statsMap['txCtr']=0}; state.stats = mapToJsonString(statsMap)
     sendHubCommand(allActions)
 }
 
@@ -973,6 +1018,19 @@ private Map getBatteryResult(rawValue) {
     }
 }
 
+String mapToJsonString( Map map) {
+    if (map==null || map==[:]) return ""
+    String str = JsonOutput.toJson(map)
+    return str
+}
+
+Map stringToJsonMap( String str) {
+    if (str==null) return [:]
+    def jsonSlurper = new JsonSlurper()
+    def map = jsonSlurper.parseText( str )
+    return map
+}
+
 Integer safeToInt(val, Integer defaultVal=0) {
 	return "${val}"?.isInteger() ? "${val}".toInteger() : defaultVal
 }
@@ -981,6 +1039,27 @@ Double safeToDouble(val, Double defaultVal=0.0) {
 	return "${val}"?.isDouble() ? "${val}".toDouble() : defaultVal
 }
 
+def logDebug(msg) {
+    if (settings?.logEnable) {
+        log.debug "${device.displayName} " + msg
+    }
+}
+
+def logInfo(msg) {
+    if (settings?.txtEnable) {
+        log.info "${device.displayName} " + msg
+    }
+}
+
+def logWarn(msg) {
+    if (settings?.logEnable) {
+        log.warn "${device.displayName} " + msg
+    }
+}
+
+def updateInfo(msg= ' ') {
+    sendEvent(name: "_info_" , value: msg, isStateChange: false)
+}
 
 def zTest( dpCommand, dpValue, dpTypeString ) {
     ArrayList<String> cmds = []
@@ -998,7 +1077,6 @@ def zTest( dpCommand, dpValue, dpTypeString ) {
 
     sendZigbeeCommands( sendTuyaCommand(dpCommand, dpType, dpValHex) )
 }
-
 
 def test( value) {
     // TS0201 _TZ3000_itnrsufe :
