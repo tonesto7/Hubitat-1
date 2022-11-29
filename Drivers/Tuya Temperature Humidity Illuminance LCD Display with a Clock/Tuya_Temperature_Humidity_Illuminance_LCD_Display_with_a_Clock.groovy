@@ -22,14 +22,14 @@
  *                                   added temperature and humidity offesets; configured parameters (including C/F HE scale) are sent to the device when paired again to HE; added Minimum time between temperature and humidity reports;
  * ver. 1.0.9 2022-10-02 kkossev  - configure _TZ2000_a476raq2 reporting time; added TS0601 _TZE200_bjawzodf; code cleanup
  * ver. 1.0.10 2022-10-11 kkossev - '_TZ3000_itnrsufe' reporting configuration bug fix?; reporting configuration result Info log; added Sonoff SNZB-02 fingerprint; reportingConfguration is sent on pairing to HE;
- * ver. 1.0.11 2022-10-31 kkossev - (dev.branch) - added _TZE200_whkgqxse; fingerprint correction; _TZ3000_bguser20 _TZ3000_fllyghyj _TZ3000_yd2e749y _TZ3000_6uzkisv2
+ * ver. 1.0.11 2022-10-31 kkossev - added _TZE200_whkgqxse; fingerprint correction; _TZ3000_bguser20 _TZ3000_fllyghyj _TZ3000_yd2e749y _TZ3000_6uzkisv2
  * ver. 1.1.0  2022-11-29 kkossev - (test branch) - added _info_ attribute
  *
  *
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/11/29 2:52 PM"}
+def timeStamp() {"2022/11/29 3:37 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -61,7 +61,7 @@ metadata {
         
         command "initialize", [[name: "Manually initialize the device after switching drivers.  \n\r     ***** Will load device default values! *****" ]]
         
-        attribute   "_info_", "string"        // when defined as attributes, will be shown on top of the 'Current States' list ...
+        attribute   "_info", "string"        // when defined as attributes, will be shown on top of the 'Current States' list ...
         
 
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0004,0005,EF00,0000", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_lve3dvpy", deviceJoinName: "Tuya Temperature Humidity Illuminance LCD Display with a Clock"
@@ -211,7 +211,6 @@ private getDP_TYPE_BITMAP()     { "05" }    // [ 1,2,4 bytes ] as bits
 // Parse incoming device messages to generate events
 def parse(String description) {
     checkDriverVersion()
-    //if (state.rxCounter != null) state.rxCounter = state.rxCounter + 1
     Map statsMap = stringToJsonMap(state.stats); try {statsMap['rxCtr']++ } catch (e) {statsMap['rxCtr']=0}; state.stats = mapToJsonString(statsMap)
     if (settings?.logEnable) log.debug "${device.displayName} parse() descMap = ${zigbee.parseDescriptionAsMap(description)}"
     if (description?.startsWith('catchall:') || description?.startsWith('read attr -')) {
@@ -289,9 +288,16 @@ def parse(String description) {
     else {
         if (settings?.logEnable) log.debug "${device.displayName} <b> UNPROCESSED </b> parse() descMap = ${zigbee.parseDescriptionAsMap(description)}"
     }
+    //
+    if (isPendingConfig()) {
+        ConfigurationStateMachine()
+    }
+
 }
 
 def parseZHAcommand( Map descMap) {
+    Map lastRxMap = stringToJsonMap(state.lastRx)
+    Map lastTxMap = stringToJsonMap(state.lastTx)
     switch (descMap.command) {
         case "01" : //read attribute response. If there was no error, the successful attribute reading would be processed in the main parse() method.
             def status = descMap.data[2]
@@ -324,13 +330,33 @@ def parseZHAcommand( Map descMap) {
                 else {
                     if (logEnable==true) log.debug "${device.displayName} descMap.data.size = ${descMap.data.size()}"
                 }
-                if (logEnable==true) log.debug "${device.displayName} Received Read Reporting Configuration Response (0x09) for cluster:${descMap.clusterId} attribite:${descMap.data[3]+descMap.data[2]}, data=${descMap.data} (Status: ${descMap.data[0]=="00" ? 'Success' : '<b>Failure</b>'}) min=${min} max=${max} delta=${delta}"
+                logDebug "Received Read Reporting Configuration response (0x09) for cluster:${descMap.clusterId} attribite:${descMap.data[3]+descMap.data[2]}, data=${descMap.data} (Status: ${descMap.data[0]=="00" ? 'Success' : '<b>Failure</b>'}) min=${min} max=${max} delta=${delta}"
+                String attributeName
+                if (descMap.clusterId == "0405") {
+                    attributeName = "humidity"
+                    lastRxMap.humiCfg = min.toString() + "," + max.toString() + "," + delta.toString()
+                    if (lastRxMap.humiCfg == lastTxMap.humiCfg) {
+                        lastTxMap.humiCfgOK = true
+                    }
+                }
+                else if (descMap.clusterId == "0402") {
+                    attributeName = "temperature"
+                    lastRxMap.tempCfg = min.toString() + "," + max.toString() + "," + delta.toString()
+                    if (lastRxMap.tempCfg == lastTxMap.tempCfg) {
+                        lastTxMap.tempCfgOK = true
+                    }
+                }
+                else {
+                    attributeName = descMap.clusterId
+                }
+                if (lastTxMap.humiCfgOK == true && lastTxMap.tempCfgOK == true) {
+                    logDebug "both T&H configured!"    
+                }
                 if (txtEnable==true) {
-                    String attributeName = descMap.clusterId == "0405" ? "humidity" : descMap.clusterId == "0402" ? "temperature" : descMap.clusterId
                     log.info "${device.displayName} Reporting Configuration Response for ${attributeName}  (status: ${descMap.data[0]=="00" ? 'Success' : '<b>Failure</b>'}) is: min=${min} max=${max} delta=${delta}"
                 }
             }
-            else {
+            else {    // failure
                 if (logEnable==true) log.info "${device.displayName} <b>Not Found (0x8b)</b> Read Reporting Configuration Response for cluster:${descMap.clusterId} attribite:${descMap.data[3]+descMap.data[2]}, data=${descMap.data} (Status: ${descMap.data[0]=="00" ? 'Success' : '<b>Failure</b>'})"
             }
             break
@@ -344,6 +370,8 @@ def parseZHAcommand( Map descMap) {
             if (logEnable==true) log.warn "${device.displayName} Unprocessed global command: cluster=${descMap.clusterId} command=${descMap.command} attrId=${descMap.attrId} value=${descMap.value} data=${descMap.data}"
             break
     }
+   state.lastRx = mapToJsonString(lastRxMap)
+   state.lastTx = mapToJsonString(lastTxMap)
 }    
 
 def parseZDOcommand( Map descMap ) {
@@ -614,7 +642,7 @@ def temperatureEvent( temperature, isDigital=false ) {
     Integer timeRamaining = (minReportingTimeTemp - timeElapsed) as Integer
     if (timeElapsed >= minReportingTimeTemp) {
 		if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText}"}
-		unschedule(sendDelayedEventTemp)		//get rid of stale queued reports
+		unschedule("sendDelayedEventTemp")		//get rid of stale queued reports
 		//state.lastTemp = now()
         lastRxMap['tempTime'] = now()
         sendEvent(map)
@@ -650,7 +678,7 @@ def humidityEvent( humidity, isDigital=false ) {
     Integer timeRamaining = (minReportingTimeHumidity - timeElapsed) as Integer
     if (timeElapsed >= minReportingTimeHumidity) {
         if (settings?.txtEnable) {log.info "${device.displayName} ${map.descriptionText}"}
-        unschedule(sendDelayedEventHumi)
+        unschedule("sendDelayedEventHumi")
         lastRxMap['humiTime'] = now()
         sendEvent(map)
     }
@@ -692,15 +720,18 @@ def illuminanceEventLux( Integer lux, isDigital=false ) {
 
 //  called from initialize() and when installed as a new device
 def installed() {
-    sendEvent(name: "_info_", value: "installed", isStateChange: true)
+    sendEvent(name: "_info", value: "installed", isStateChange: true)
     if (settings?.txtEnable) log.info "${device.displayName} installed()..."
     unschedule()
     initializeVars(fullInit = true )
 }
 
-
+//
 def updated() {
     ArrayList<String> cmds = []
+    Map lastRxMap = stringToJsonMap(state.lastRx)
+    Map lastTxMap = stringToJsonMap(state.lastTx)
+
 
     /*
     if (modelGroupPreference == null) {
@@ -712,11 +743,11 @@ def updated() {
     if (settings?.txtEnable) log.info "${device.displayName} Updating ${device.getLabel()} (${device.getName()}) model ${device.getDataValue('model')} manufacturer <b>${device.getDataValue('manufacturer')}</b> modelGroupPreference = <b>${modelGroupPreference}</b> (${getModelGroup()})"
     if (settings?.txtEnable) log.info "${device.displayName} Debug logging is <b>${logEnable}</b>; Description text logging is <b>${txtEnable}</b>"
     if (logEnable==true) {
-        runIn(86400, logsOff, [overwrite: true, misfire: "ignore"])    // turn off debug logging after 30 minutes
+        runIn(86400, "logsOff", [overwrite: true, misfire: "ignore"])    // turn off debug logging after 30 minutes
         if (settings?.txtEnable) log.info "${device.displayName} Debug logging is will be turned off after 24 hours"
     }
     else {
-        unschedule(logsOff)
+        unschedule("logsOff")
     }
     Integer fncmd
     if (getModelGroup() in ['TS0601_Tuya','TS0601_Haozee']) {
@@ -773,28 +804,52 @@ def updated() {
     if (getModelGroup() in ['TS0601_Haozee']) {
         // TODO - write attribute 0xF001, cluster 0x400
     }
-    
+    /*
     if (getModelGroup() in ['TS0201_TH']) {    // //temperatureSensitivity  humiditySensitivity minReportingTimeTemp maxReportingTimeTemp c maxReportingTimeHumidity
+        lastTxMap.tempCfg = (settings?.minReportingTimeTemp as int).toString() + "," + (maxReportingTimeTemp as int).toString() + "," + ((temperatureSensitivity * 100) as int).toString()
+        lastTxMap.humiCfg = (settings?.minReportingTimeHumidity as int).toString() + "," + (maxReportingTimeHumidity as int).toString() + "," + ((humiditySensitivity *100) as int).toString()
+        
     	cmds += zigbee.configureReporting(0x0402, 0x0000, 0x29, settings?.minReportingTimeTemp as int, maxReportingTimeTemp as int, (temperatureSensitivity * 100 ) as int, [:], 200)  // Configure temperature - Report after 10 seconds if any change, every 10 minutes if no change
     	cmds += zigbee.configureReporting(0x0405, 0x0000, DataType.UINT16, settings?.minReportingTimeHumidity as int, maxReportingTimeHumidity as int, (humiditySensitivity * 100) as int, [:], 200)  // Configure Humidity - - Report after 10 seconds if any change, every 10 minutes if no change
         cmds += zigbee.reportingConfiguration(0x0402, 0x0000, [:], 250)
         cmds += zigbee.reportingConfiguration(0x0405, 0x0000, [:], 250)
     }
+*/
     // 
-    if (getModelGroup() in ["Zigbee NON-Tuya"]) {    // //temperatureSensitivity  humiditySensitivity minReportingTimeTemp maxReportingTimeTemp c maxReportingTimeHumidity
-        log.info "${device.displayName} configure reporting ..."
-    	cmds += zigbee.configureReporting(0x0402, 0x0000, DataType.INT16, settings?.minReportingTimeTemp as int, maxReportingTimeTemp as int, (temperatureSensitivity * 100) as int, [:], 200)
-    	cmds += zigbee.configureReporting(0x0405, 0x0000, DataType.UINT16, settings?.minReportingTimeHumidity as int, maxReportingTimeHumidity as int, (humiditySensitivity *100) as int, [:], 200)
+    if (getModelGroup() in ["Zigbee NON-Tuya", "TS0201_TH"]) {    // //temperatureSensitivity  humiditySensitivity minReportingTimeTemp maxReportingTimeTemp c maxReportingTimeHumidity
+       
+        lastTxMap.tempCfg = (settings?.minReportingTimeTemp as int).toString() + "," + (maxReportingTimeTemp as int).toString() + "," + ((temperatureSensitivity * 100) as int).toString()
+        lastTxMap.humiCfg = (settings?.minReportingTimeHumidity as int).toString() + "," + (maxReportingTimeHumidity as int).toString() + "," + ((humiditySensitivity *100) as int).toString()
+        
+        if (lastTxMap.tempCfg != lastRxMap.tempCfg) {
+    	    cmds += zigbee.configureReporting(0x0402, 0x0000, DataType.INT16, settings?.minReportingTimeTemp as int, maxReportingTimeTemp as int, (temperatureSensitivity * 100) as int, [:], 200)
+            log.info "configure temperature reporting (${lastTxMap.tempCfg}) pending ..."
+            lastTxMap.tempCfgOK = false
+        }
+        else {
+            logDebug "Temperature reporting already configured (${lastTxMap.tempCfg}), skipping ..."
+            lastTxMap.tempCfgOK = true
+        }
+        if (lastTxMap.humiCfg != lastRxMap.humiCfg) {
+    	    cmds += zigbee.configureReporting(0x0405, 0x0000, DataType.UINT16, settings?.minReportingTimeHumidity as int, maxReportingTimeHumidity as int, (humiditySensitivity *100) as int, [:], 200)
+            log.info "configure humidity reporting (${lastTxMap.humiCfg}) pending ..."
+            lastTxMap.humiCfgOK = false
+        }
+        else {
+            logDebug "Humidity reporting already configured (${lastTxMap.humiCfg}), skipping ..."
+            lastTxMap.humiCfgOK = true
+        }
+        
         cmds += zigbee.reportingConfiguration(0x0402, 0x0000, [:], 250)
         cmds += zigbee.reportingConfiguration(0x0405, 0x0000, [:], 250)
     } 
     
     /* 2022-05-09 - do not configre reporting for multi-EP devices like TS0201 _TZ3000_qaaysllp !!! (binds to wrong EP ?)
     if (getModelGroup() in ["Zigbee NON-Tuya", 'TS0201_LCZ030']) {
-    	cmds += zigbee.configureReporting(0x0400, 0x0000, DataType.INT16, 10, 600, 5, [:], 200)  // Configure Illuminance - Report after 10 seconds if any change, every 10 minutes if no change, 5 Lux change?
     	cmds += zigbee.configureReporting(0x0402, 0x0000, DataType.INT16, 10, 600, 1, [:], 200)  // Configure temperature - Report after 10 seconds if any change, every 10 minutes if no change
-    	cmds += zigbee.configureReporting(0x0403, 0x0000, DataType.INT16, 10, 600, 1, [:], 200)  // Configure Pressure - Report after 10 seconds if any change, every 10 minutes if no change
     	cmds += zigbee.configureReporting(0x0405, 0x0000, DataType.INT16, 10, 600, 1, [:], 200)  // Configure Humidity - - Report after 10 seconds if any change, every 10 minutes if no change
+    	cmds += zigbee.configureReporting(0x0400, 0x0000, DataType.INT16, 10, 600, 5, [:], 200)  // Configure Illuminance - Report after 10 seconds if any change, every 10 minutes if no change, 5 Lux change?
+    	cmds += zigbee.configureReporting(0x0403, 0x0000, DataType.INT16, 10, 600, 1, [:], 200)  // Configure Pressure - Report after 10 seconds if any change, every 10 minutes if no change
    		cmds += zigbee.configureReporting(0x0001, 0x0020, DataType.UINT8, 0, 21600, 1, [:], 200)   // Configure Voltage - Report once per 6hrs or if a change of 100mV detected
    		cmds += zigbee.configureReporting(0x0001, 0x0021, DataType.UINT8, 0, 21600, 1, [:], 200)   // Configure Battery % - Report once per 6hrs or if a change of 1% detected
     }
@@ -803,10 +858,108 @@ def updated() {
     //illuminanceSensitivity - descMap.cluster == "0400" && descMap.attrId == "F001"
     // TODO !!!!! ( for TS0201 Neo Coolcam and TS0222  MOES ZSS-ZK-THL
     //
-    if (settings?.txtEnable) log.info "${device.displayName} Update finished"
+    
+    state.lastTx = mapToJsonString(lastTxMap)
+    def pendingConfig = lastTxMap.tempCfgOK == true ? 0 : 1
+    pendingConfig    += lastTxMap.humiCfgOK == true ? 0 : 1
+    logInfo "pending ${pendingConfig} reporting configurations"
+    if (pendingConfig != 0 ) {
+        updateInfo("Pending ${pendingConfig} configurations . Wake up the device!")
+    }
+    /*
+    else {
+        updateInfo("Configured")
+    }
+    */
     sendZigbeeCommands( cmds )
 }
 
+
+def isPendingConfig() {
+    Map lastTxMap = stringToJsonMap(state.lastTx)
+    if (lastTxMap.tempCfgOK == false || lastTxMap.humiCfgOK == false) {
+        return true
+    }
+    else {
+        return false
+    }
+}
+
+// called from parse() when any packet is received from the awaken device ...
+def ConfigurationStateMachine() {
+    Map lastTxMap = stringToJsonMap(state.lastTx)
+    def configState = state.configState
+    logDebug "ConfigurationStateMachine configState = ${configState}"
+    switch (configState) {
+        case 0 : // idle
+            if (isPendingConfig()) {
+                logDebug "configuration pending ..."
+                updateInfo("sending the reporting configuration...") 
+                lastTxMap.cfgTimer = 15
+                updated()
+                runIn(1, "configTimer" , [overwrite: true, misfire: "ignore"])
+                configState = 1
+            }
+            else {
+                logWarn "ConfigurationStateMachine called without isPendingConfig?"
+                unschedule("configTimer")	
+            }
+            break
+        case 1 : // waiting 10 seconds for acknowledge from the device // TODO - process config ERRORS !!!
+            if (!isPendingConfig()) {
+                updateInfo("configured") 
+                lastTxMap.cfgTimer = 0
+                configState = 0
+                unschedule("configTimer")	
+            }
+            else if (lastTxMap.cfgTimer == null || lastTxMap.cfgTimer == 0) {    // timeout
+                logDebug "Timeout!"
+                updateInfo("Timeout!") 
+                lastTxMap.cfgTimer = 0
+                unschedule("configTimer")	
+                configState = 0    // try again next time a packet is received from the device..
+            }
+            else {
+                logDebug "config confirmation still pending ... lastTxMap.cfgTimer is ${lastTxMap.cfgTimer}"
+            }
+            break
+        default : 
+            logWarn "ConfigurationStateMachine() unknown state ${configState}"
+            unschedule("configTimer")	
+            configState = 0
+            break
+    }
+    state.configState = configState
+    state.lastTx = mapToJsonString(lastTxMap)
+}
+
+// started from ConfigurationStateMachine
+def configTimer() {
+    Map lastTxMap = stringToJsonMap(state.lastTx)
+    logDebug "configTimer() callled"
+    if (lastTxMap.cfgTimer != null) {
+        if (!isPendingConfig()) {
+            logDebug "configuration is successful! "
+            ConfigurationStateMachine()
+        }
+        else {
+            lastTxMap.cfgTimer = lastTxMap.cfgTimer - 1
+            if (lastTxMap.cfgTimer >= 0 ) {
+                state.lastTx = mapToJsonString(lastTxMap)    // flush the timer!
+                ConfigurationStateMachine()
+                runIn(1, "configTimer" /*, [overwrite: true, misfire: "ignore"]*/)
+                logDebug "scheduling again configTimer = ${lastTxMap.cfgTimer}"
+            }
+            else {
+                logDebug "configTimer expired! Do not restart it."
+            }
+        }
+    }
+    else {
+        lastTxMap.cfgTimer = 0
+    }
+    state.lastTx = mapToJsonString(lastTxMap)
+}
 
 def pollTS0222() {
     List<String> cmds = []
@@ -842,6 +995,8 @@ def checkDriverVersion() {
         //
         if (state.rxCounter != null) state.remove("rxCounter")
         if (state.txCounter != null) state.remove("txCounter")
+        if (state.packetID != null)  state.remove("packetID")
+        
         if (state.lastRx == null || state.stats == null || state.lastTx == null) {
             resetStats()
         }
@@ -860,12 +1015,17 @@ def resetStats() {
     
     Map lastRx = [
         tempTime : now() - defaultMinReportingTime * 1000,
-        humiTime : now() - defaultMinReportingTime * 1000
+        humiTime : now() - defaultMinReportingTime * 1000,
+        tempCfg : '-1,-1,-1',
+        humiCfg : '-1,-1,-1'
     ]
     
     Map lastTx = [
-        tempCfg : '',
-        humiCfg : ''
+        tempCfg : '-1,-1,-1',
+        humiCfg : '-1,-1,-1',
+        tempCfgOK : false,
+        humiCfgOK : false,
+        cfgTimer : 0
     ]
     state.stats  =  mapToJsonString( stats )
     state.lastRx =  mapToJsonString( lastRx )
@@ -887,9 +1047,7 @@ void initializeVars(boolean fullInit = true ) {
         resetStats()
         state.driverVersion = driverVersionAndTimeStamp()
     }
-    state.packetID = 0
-    //state.rxCounter = 0
-    //state.txCounter = 0
+    state.configState = 0    // reset the configuration state machine
 
     if (fullInit == true || settings?.modelGroupPreference == null) device.updateSetting("modelGroupPreference", [value:"Auto detect", type:"enum"])
     if (fullInit == true || settings?.logEnable == null) device.updateSetting("logEnable", true)
@@ -959,8 +1117,9 @@ void sendZigbeeCommands(ArrayList<String> cmd) {
 }
 
 private getPACKET_ID() {
-    state.packetID = ((state.packetID ?: 0) + 1 ) % 65536
-    return zigbee.convertToHexString(state.packetID, 4)
+    //state.packetID = ((state.packetID ?: 0) + 1 ) % 65536
+    //return zigbee.convertToHexString(state.packetID, 4)
+    return zigbee.convertToHexString(new Random().nextInt(65536), 4)
 }
 
 private getDescriptionText(msg) {
@@ -1058,7 +1217,7 @@ def logWarn(msg) {
 }
 
 def updateInfo(msg= ' ') {
-    sendEvent(name: "_info_" , value: msg, isStateChange: false)
+    sendEvent(name: "_info" , value: msg, isStateChange: false)
 }
 
 def zTest( dpCommand, dpValue, dpTypeString ) {
