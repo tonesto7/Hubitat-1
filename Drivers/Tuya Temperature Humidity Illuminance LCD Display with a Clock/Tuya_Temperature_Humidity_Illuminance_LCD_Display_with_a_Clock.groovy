@@ -29,7 +29,7 @@
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/11/30 1:57 PM"}
+def timeStamp() {"2022/11/30 9:39 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -49,6 +49,8 @@ metadata {
         capability "RelativeHumidityMeasurement"
         capability "IlluminanceMeasurement"
         //capability "ContactSensor"    // uncomment for _TZE200_pay2byax contact w/ illuminance sensor
+        //capability "MotionSensor"    // uncomment for SiHAS multi sensor
+
         
         /*
         command "zTest", [
@@ -99,7 +101,9 @@ metadata {
                 "TS0222_2":"TS0222_2", "TS0201_TH":"TS0201_TH", "Zigbee NON-Tuya":"Zigbee NON-Tuya"])
         input (name: "advancedOptions", type: "bool", title: "Advanced options", description: "May not be supported by all devices!", defaultValue: false)
         if (advancedOptions == true) {
-            input (title: "To configure a sleepy device, try any of the methods below :", description: "<b> * Rapidly change the temperature or the humidity<br> * Remove the battery for at least 1 minute<br> * Pair the device again to HE</b>", type: "paragraph", element: "paragraph")        
+            if (isConfigurable()) {
+                input (title: "To configure a sleepy device, try any of the methods below :", description: "<b> * Rapidly change the temperature or the humidity<br> * Remove the battery for at least 1 minute<br> * Pair the device again to HE</b>", type: "paragraph", element: "paragraph")
+            }
             configParams.each {
                 //log.warn "it.value.input.limit = ${it.value.input.limit}"
                 if (it.value.input.limit == null || 'ALL' in it.value.input.limit || getModelGroup() in it.value.input.limit) {
@@ -122,10 +126,10 @@ metadata {
                    limit:['ALL']]],
 
         2: [input: [name: "temperatureSensitivity", type: "decimal", title: "Temperature Sensitivity", description: "Temperature change for reporting, "+"\u00B0"+"C", defaultValue: 0.5, range: "0.1..50.0",
-                   limit:['TS0601_Tuya', 'TS0601_Haozee', 'TS0201_TH', 'TS0201', "Zigbee NON-Tuya"]]],
+                   limit:['TS0601_Tuya', 'TS0601_Haozee', 'TS0201_TH', "Zigbee NON-Tuya"]]],
 
         3: [input: [name: "humiditySensitivity", type: "number", title: "Humidity Sensitivity", description: "Humidity change for reporting, %", defaultValue: 5, range: "1..50",
-                   limit:['TS0601_Tuya', 'TS0601_Haozee', 'TS0201_TH', 'TS0201', "Zigbee NON-Tuya"]]],
+                   limit:['TS0601_Tuya', 'TS0601_Haozee', 'TS0201_TH', "Zigbee NON-Tuya"]]],
 
         4: [input: [name: "illuminanceSensitivity", type: "number", title: "Illuminance Sensitivity", description: "Illuminance change for reporting, %", defaultValue: 12, range: "10..100",                // TS0222 "MOES ZSS-ZK-THL"
                    limit:['TS0222']]],
@@ -187,7 +191,10 @@ metadata {
 
 ]
 
+def isConfigurable()  { getModelGroup() in ['Zigbee NON-Tuya', 'TS0201_TH'] }
+
 @Field static final Integer MaxRetries = 3
+@Field static final Integer ConfigTimer = 15
 
 // KK TODO !
 private getCLUSTER_TUYA()       { 0xEF00 }
@@ -229,7 +236,12 @@ def parse(String description) {
         }
 		else if (descMap.cluster == "0400" && descMap.attrId == "0000") {
             def rawLux = Integer.parseInt(descMap.value,16)
-            illuminanceEvent( rawLux )
+            if (device.getDataValue("manufacturer") in ["ShinaSystem"]) {
+                illuminanceEventLux( rawLux )
+            }
+            else {
+                illuminanceEvent( rawLux )
+            }
             if (getModelGroup() == 'TS0222') {
                 pollTS0222()
             }
@@ -256,6 +268,10 @@ def parse(String description) {
             else {
                  humidityEvent( raw / 10.0 )    // also _TZE200_bjawzodf ?
             }
+		}
+        else if (descMap.cluster == "0406" && descMap.attrId == "0000") {    // OWON, SiHAS
+            def raw = Integer.parseInt(descMap.value,16)
+            motionEvent( raw & 0x01 )
 		}
         else if (descMap?.clusterInt == CLUSTER_TUYA) {
             processTuyaCluster( descMap )
@@ -713,6 +729,15 @@ def switchEvent( value ) {
     sendEvent(map)
 }
 
+def motionEvent( value ) {
+    def map = [:]
+    map.name = "motion"
+    map.value = value  ? 'active' : 'inactive'
+    map.descriptionText = "${device.displayName} motion is ${map.value}"
+    if (settings?.txtEnable) {log.info "${map.descriptionText}"}
+    sendEvent(map)
+}
+
 def illuminanceEvent( illuminance, isDigital=false ) {
     //def rawLux = Integer.parseInt(descMap.value,16)
 	def lux = illuminance > 0 ? Math.round(Math.pow(10,(illuminance/10000))) : 0
@@ -873,15 +898,13 @@ def updated() {
     state.lastTx = mapToJsonString(lastTxMap)
     def pendingConfig = lastTxMap.tempCfgOK == true ? 0 : 1
     pendingConfig    += lastTxMap.humiCfgOK == true ? 0 : 1
-    logInfo "pending ${pendingConfig} reporting configurations"
-    if (pendingConfig != 0 ) {
-        updateInfo("Pending ${pendingConfig} configurations . Wake up the device!")
+    if (isConfigurable()) {
+        logInfo "pending ${pendingConfig} reporting configurations"
+        if (pendingConfig != 0 ) {
+            updateInfo("Pending ${pendingConfig} configurations . Wake up the device!")
+        }
     }
-    /*
-    else {
-        updateInfo("Configured")
-    }
-    */
+    
     sendZigbeeCommands( cmds )
 }
 
@@ -898,6 +921,9 @@ def isPendingConfig() {
 
 // called from parse() when any packet is received from the awaken device ...
 def ConfigurationStateMachine() {
+    if (!isConfigurable()) {
+        return
+    }
     Map lastTxMap = stringToJsonMap(state.lastTx)
     def configState = state.configState
     logDebug "ConfigurationStateMachine configState = ${configState}"
@@ -906,7 +932,7 @@ def ConfigurationStateMachine() {
             if (isPendingConfig()) {
                 logDebug "configuration pending ..."
                 updateInfo("sending the reporting configuration...") 
-                lastTxMap.cfgTimer = 10
+                lastTxMap.cfgTimer = ConfigTimer
                 updated()
                 runIn(1, "configTimer" , [overwrite: true, misfire: "ignore"])
                 configState = 1
