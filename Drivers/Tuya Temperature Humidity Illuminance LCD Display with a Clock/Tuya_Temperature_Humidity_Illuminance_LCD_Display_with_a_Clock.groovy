@@ -23,13 +23,13 @@
  * ver. 1.0.9 2022-10-02 kkossev  - configure _TZ2000_a476raq2 reporting time; added TS0601 _TZE200_bjawzodf; code cleanup
  * ver. 1.0.10 2022-10-11 kkossev - '_TZ3000_itnrsufe' reporting configuration bug fix?; reporting configuration result Info log; added Sonoff SNZB-02 fingerprint; reportingConfguration is sent on pairing to HE;
  * ver. 1.0.11 2022-10-31 kkossev - added _TZE200_whkgqxse; fingerprint correction; _TZ3000_bguser20 _TZ3000_fllyghyj _TZ3000_yd2e749y _TZ3000_6uzkisv2
- * ver. 1.1.0  2022-11-29 kkossev - (test branch) - added _info_ attribute; delayed reporting configuration when the sleepy device wakes up.
+ * ver. 1.1.0  2022-11-30 kkossev - (test branch) - added _info_ attribute; delayed reporting configuration when the sleepy device wakes up.
  *
  *
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/11/29 9:43 PM"}
+def timeStamp() {"2022/11/30 7:14 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -325,8 +325,11 @@ def parseZHAcommand( Map descMap) {
                 def min = zigbee.convertHexToInt(descMap.data[6])*256 + zigbee.convertHexToInt(descMap.data[5])
                 def max = zigbee.convertHexToInt(descMap.data[8]+descMap.data[7])
                 def delta = 0
-                if (descMap.data.size()>=10) { 
+                if (descMap.data.size() == 11) { 
                     delta = zigbee.convertHexToInt(descMap.data[10]+descMap.data[9])
+                }
+                else if (descMap.data.size() == 10) { 
+                    delta = zigbee.convertHexToInt(descMap.data[9])
                 }
                 else {
                     if (logEnable==true) log.debug "${device.displayName} descMap.data.size = ${descMap.data.size()}"
@@ -346,6 +349,9 @@ def parseZHAcommand( Map descMap) {
                     if (lastRxMap.tempCfg == lastTxMap.tempCfg) {
                         lastTxMap.tempCfgOK = true
                     }
+                }
+                else if (descMap.clusterId == "0001") {
+                    attributeName = "battery %"
                 }
                 else {
                     attributeName = descMap.clusterId
@@ -840,9 +846,11 @@ def updated() {
             logDebug "Humidity reporting already configured (${lastTxMap.humiCfg}), skipping ..."
             lastTxMap.humiCfgOK = true
         }
+        cmds += zigbee.configureReporting(0x0001, 0x0021, DataType.UINT8, 600, 21600, 0x01, [:], 200)
         
         cmds += zigbee.reportingConfiguration(0x0402, 0x0000, [:], 250)
         cmds += zigbee.reportingConfiguration(0x0405, 0x0000, [:], 250)
+        cmds += zigbee.reportingConfiguration(0x0001, 0x0021, [:], 250)
     } 
     
     /* 2022-05-09 - do not configre reporting for multi-EP devices like TS0201 _TZ3000_qaaysllp !!! (binds to wrong EP ?)
