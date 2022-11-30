@@ -23,13 +23,13 @@
  * ver. 1.0.9 2022-10-02 kkossev  - configure _TZ2000_a476raq2 reporting time; added TS0601 _TZE200_bjawzodf; code cleanup
  * ver. 1.0.10 2022-10-11 kkossev - '_TZ3000_itnrsufe' reporting configuration bug fix?; reporting configuration result Info log; added Sonoff SNZB-02 fingerprint; reportingConfguration is sent on pairing to HE;
  * ver. 1.0.11 2022-10-31 kkossev - added _TZE200_whkgqxse; fingerprint correction; _TZ3000_bguser20 _TZ3000_fllyghyj _TZ3000_yd2e749y _TZ3000_6uzkisv2
- * ver. 1.1.0  2022-11-30 kkossev - (test branch) - added _info_ attribute; delayed reporting configuration when the sleepy device wakes up; included TS0201 model devices in the delayed configuration
+ * ver. 1.1.0  2022-11-30 kkossev - (test branch) - added _info_ attribute; delayed reporting configuration when the sleepy device wakes up; excluded TS0201 model devices in the delayed configuration
  *
  *
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/11/30 12:55 PM"}
+def timeStamp() {"2022/11/30 1:57 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -146,13 +146,13 @@ metadata {
                    limit:['ALL']]],
     
        10: [input: [name: "maxReportingTimeTemp", type: "number", title: "Maximum time between temperature reports", description: "Maximum time between temperature reporting, seconds", defaultValue: 3600, range: "10..43200",
-                   limit:['TS0601_Haozee', 'TS0201_TH', 'TS0201', "Zigbee NON-Tuya"]]],
+                   limit:['TS0601_Haozee', 'TS0201_TH', "Zigbee NON-Tuya"]]],
   
        11: [input: [name: "minReportingTimeHumidity", type: "number", title: "Minimum time between humidity reports", description: "Minimum time between humidity reporting, seconds", defaultValue: 10, range: "1..3600",
                    limit:['ALL']]],
     
        12: [input: [name: "maxReportingTimeHumidity", type: "number", title: "Maximum time between humidity reports", description: "Maximum time between humidity reporting, seconds", defaultValue: 3600, range: "10..43200",
-                   limit:['TS0601_Haozee', 'TS0201_TH', 'TS0201', "Zigbee NON-Tuya"]]],
+                   limit:['TS0601_Haozee', 'TS0201_TH', "Zigbee NON-Tuya"]]],
 
        13: [input: [name: "alarmTempPar", type: "enum", title: "Temperature Alarm", description:"Temperature Alarm", defaultValue: 0, options: [0:"Below min temp", 1:"Over max temp", 2:"off"],
                    limit:[/*'TS0201_LCZ030'*/]]],
@@ -823,7 +823,7 @@ def updated() {
     }
 */
     // 
-    if (getModelGroup() in ["Zigbee NON-Tuya", "TS0201_TH", "TS0201"]) {    // //temperatureSensitivity  humiditySensitivity minReportingTimeTemp maxReportingTimeTemp c maxReportingTimeHumidity
+    if (getModelGroup() in ["Zigbee NON-Tuya", "TS0201_TH"]) {    // //temperatureSensitivity  humiditySensitivity minReportingTimeTemp maxReportingTimeTemp c maxReportingTimeHumidity
        
         lastTxMap.tempCfg = (settings?.minReportingTimeTemp as int).toString() + "," + (maxReportingTimeTemp as int).toString() + "," + ((temperatureSensitivity * 100) as int).toString()
         lastTxMap.humiCfg = (settings?.minReportingTimeHumidity as int).toString() + "," + (maxReportingTimeHumidity as int).toString() + "," + ((humiditySensitivity *100) as int).toString()
@@ -985,7 +985,7 @@ def refresh() {
     if (getModelGroup() == 'TS0222') {
         pollTS0222()
     }
-    else if (getModelGroup() in ['TS0201_TH', 'TS0201']) {
+    else if (getModelGroup() in ['TS0201_TH']) {
         List<String> cmds = []
         cmds += zigbee.readAttribute(0x0001, 0x0021, [:], delay=200) 
 	    cmds += zigbee.readAttribute(0x0402, 0x0000, [:], delay=200)
