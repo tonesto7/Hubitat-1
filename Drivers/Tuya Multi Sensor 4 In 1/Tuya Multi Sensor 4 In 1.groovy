@@ -25,14 +25,17 @@
  * ver. 1.0.10 2022-08-15 kkossev  - added Lux threshold parameter; square black radar LED configuration is resent back when device is powered on; round black PIR sensor powerSource is set to DC; added OWON OCP305 Presence Sensor
  * ver. 1.0.11 2022-08-22 kkossev  - IAS devices initialization improvements; presence threshold increased to 4 hours; 3in1 exceptions bug fixes; 3in1 and 4in1 exceptions bug fixes;
  * ver. 1.0.12 2022-09-05 kkossev  - added _TZE200_wukb7rhc MOES radar
- * ver. 1.0.13 2022-09-25 kkossev  - added _TZE200_jva8ink8 AUBESS radar; 2-in-1 Sensitivity setting bug fix?
+ * ver. 1.0.13 2022-09-25 kkossev  - added _TZE200_jva8ink8 AUBESS radar; 2-in-1 Sensitivity setting bug fix
  * ver. 1.0.14 2022-10-31 kkossev  - added Bond motion sensor ZX-BS-J11W fingerprint for tests
- * ver. 1.0.15 2022-10-31 kkossev  - OWON 0x0406 cluster binding
+ * ver. 1.0.15 2022-12-03 kkossev  - OWON 0x0406 cluster binding; added _TZE204_ztc6ggyl _TZE200_ar0slwnd _TZE200_sfiy5tfs _TZE200_mrf6vtua (was wrongly 3in1) mmWave radards;
+ * ver. 1.0.16 2022-12-10 kkossev  - (dev. branch) _TZE200_3towulqd (2-in-1) motion detection inverted; excluded from IAS group;
+ *
+ * ver. 1.1.0  2022-12-13 kkossev  - (TEST branch) SetPar() command
  *
 */
 
-def version() { "1.0.15" }
-def timeStamp() {"2022/11/28 7:48 AM"}
+def version() { "1.1.0" }
+def timeStamp() {"2022/12/13 5:01 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -67,8 +70,6 @@ metadata {
         command "refresh",   [[name: "May work for some DC/mains powered sensors only"]] 
 
         if (debug == true) {
-            //command "deleteAllStatesAndJobs",   [[name: "Delete all states and jobs before switching to another driver"]] 
-            //command "force_TZE200_9qayzqa8"
             command "test", [
                 [name:"dpCommand", type: "STRING", description: "Tuya DP Command", constraints: ["STRING"]],
                 [name:"dpValue",   type: "STRING", description: "Tuya DP value", constraints: ["STRING"]],
@@ -89,7 +90,6 @@ metadata {
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0001,0500,EF00", outClusters:"0019,000A", model:"5j6ifxj", manufacturer:"_TYST11_i5j6ifxj", deviceJoinName: "Tuya Multi Sensor 4 In 1"       
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0001,0500,EF00", outClusters:"0019,000A", model:"hfcudw5", manufacturer:"_TYST11_7hfcudw5", deviceJoinName: "Tuya Multi Sensor 4 In 1"
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_7hfcudw5", deviceJoinName: "Tuya NAS-PD07 Multi Sensor 3 In 1" // KK // https://szneo.com/en/products/show.php?id=239 // https://www.banggood.com/Tuya-Smart-Linkage-ZB-Motion-Sensor-Human-Infrared-Detector-Mobile-Phone-Remote-Monitoring-PIR-Sensor-p-1858413.html?cur_warehouse=CN 
-        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_mrf6vtua", deviceJoinName: "Tuya Multi Sensor 3 In 1"          // not tested
 
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0001,0500,0000",      outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_3towulqd", deviceJoinName: "Tuya 2 in 1 Zigbee Mini PIR Motion Detector + Bright Lux ZG-204ZL"          // https://www.aliexpress.com/item/1005004095233195.html
         
@@ -110,10 +110,14 @@ metadata {
         
         // Smart Human presence sensors - illuminance, presence, target_distance; radar_sensitivity; minimum_range; maximum_range; detection_delay; fading_time; CLI; self_test (checking, check_success, check_failure, others, comm_fault, radar_fault)
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_ztc6ggyl", deviceJoinName: "Tuya ZigBee Breath Presence Sensor ZY-M100"              // KK
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE204_ztc6ggyl", deviceJoinName: "Tuya ZigBee Breath Presence Sensor ZY-M100"              // KK
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_ikvncluo", deviceJoinName: "Moes TuyaHuman Presence Detector Radar 2 in 1"           // jw970065
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_lyetpprm", deviceJoinName: "Tuya ZigBee Breath Presence Sensor"   
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_wukb7rhc", deviceJoinName: "Moes Smart Human Presence Detector"   // https://www.moeshouse.com/collections/smart-sensor-security/products/smart-zigbee-human-presence-detector-pir-mmwave-radar-detection-sensor-ceiling-mount
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_jva8ink8", deviceJoinName: "AUBESS Human Presence Detector"       // https://www.aliexpress.com/item/1005004262109070.html 
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_mrf6vtua", deviceJoinName: "Tuya Human Presence Detector"             // not tested
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_ar0slwnd", deviceJoinName: "Tuya Human Presence Detector"         // not tested
+        fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0004,0005,EF00", outClusters:"0019,000A", model:"TS0601", manufacturer:"_TZE200_sfiy5tfs", deviceJoinName: "Tuya Human Presence Detector"         // not tested
        
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0000,0003,0001,0500", outClusters:"0000,0003,0001,0500", model:"TS0202", manufacturer:"_TYZB01_dl7cejts", deviceJoinName: "Tuya TS0202 Motion Sensor"  // KK model: 'ZM-RT201'// 5 seconds (!) reset period for testing
         fingerprint profileId:"0104", endpointId:"01", inClusters:"0001,0500,0003,0000", outClusters:"1000,0006,0019,000A", model:"TS0202", manufacturer:"_TZ3000_mmtwjmaq", deviceJoinName: "Tuya TS0202 Motion Sensor"
@@ -241,15 +245,15 @@ metadata {
 
 
 def is4in1() { return device.getDataValue('manufacturer') in ['_TZ3210_zmy9hjay', '_TYST11_i5j6ifxj', '_TYST11_7hfcudw5'] }
-def is3in1() { return device.getDataValue('manufacturer') in ['_TZE200_7hfcudw5', '_TZE200_mrf6vtua'] }
+def is3in1() { return device.getDataValue('manufacturer') in ['_TZE200_7hfcudw5'] }
 def is2in1() { return device.getDataValue('manufacturer') in ['_TZE200_3towulqd'] }
-def isIAS()  { return ((device.getDataValue('model') in ['TS0202']) || ('0500' in device.getDataValue('inClusters'))) }
+def isIAS()  { return (((device.getDataValue('model') in ['TS0202']) || ('0500' in device.getDataValue('inClusters'))) && (!(device.getDataValue('manufacturer') in ['_TZE200_3towulqd'])))  }
 def isTS0601_PIR() { return (device.getDataValue('model') in ['TS0601']) && !(isRadar() || isHumanPresenceSensorAIR() || isBlackPIRsensor() || isHumanPresenceSensorScene() || isHumanPresenceSensorFall() || isBlackSquareRadar()) }
 
 def isConfigurable() { return isIAS() }   // TS0202 models ['_TZ3000_mcxw5ehu', '_TZ3000_msl6wxk9']
 def isLuxMeter() { return (is2in1() || is3in1() || is4in1() || isRadar() || isHumanPresenceSensorAIR() || isBlackPIRsensor() || isHumanPresenceSensorScene() || isHumanPresenceSensorFall() || isBlackSquareRadar()) }
 
-def isRadar() { return device.getDataValue('manufacturer') in ['_TZE200_ztc6ggyl', '_TZE200_ikvncluo', '_TZE200_lyetpprm', '_TZE200_wukb7rhc', '_TZE200_jva8ink8'] }
+def isRadar() { return device.getDataValue('manufacturer') in ['_TZE200_ztc6ggyl', '_TZE204_ztc6ggyl', '_TZE200_ikvncluo', '_TZE200_lyetpprm', '_TZE200_wukb7rhc', '_TZE200_jva8ink8', '_TZE200_ar0slwnd', '_TZE200_sfiy5tfs', '_TZE200_mrf6vtua'] }
 def isRadarMOES() { return device.getDataValue('manufacturer') in ['_TZE200_ikvncluo'] }
 def isBlackPIRsensor() { return device.getDataValue('manufacturer') in ['_TZE200_9qayzqa8'] }
 def isBlackSquareRadar() { return device.getDataValue('manufacturer') in ['_TZE200_0u3bj3rc'] }
@@ -469,7 +473,12 @@ def processTuyaCluster( descMap ) {
         switch (dp) {
             case 0x01 : // motion for 2-in-1 TS0601 (_TZE200_3towulqd) and presence stat? for all radars, including isHumanPresenceSensorAIR and BlackSquareRadar
                 if (settings?.logEnable) log.debug "${device.displayName} (DP=0x01) motion event fncmd = ${fncmd}"
-                handleMotion(motionActive=fncmd)
+                if (device.getDataValue('manufacturer') in ['_TZE200_3towulqd']) {    // 2-in-1 TS0601 motion flag is inverted!
+                    handleMotion(motionActive = !fncmd)
+                }
+                else {
+                    handleMotion(motionActive = fncmd)
+                }
                 break
             case 0x02 :
                 if (isRadar()) {    // including HumanPresenceSensorScene and isHumanPresenceSensorFall
