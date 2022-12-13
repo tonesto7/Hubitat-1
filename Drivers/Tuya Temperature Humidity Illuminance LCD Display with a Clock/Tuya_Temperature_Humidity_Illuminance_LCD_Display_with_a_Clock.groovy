@@ -23,7 +23,7 @@
  * ver. 1.0.9 2022-10-02 kkossev  - configure _TZ2000_a476raq2 reporting time; added TS0601 _TZE200_bjawzodf; code cleanup
  * ver. 1.0.10 2022-10-11 kkossev - '_TZ3000_itnrsufe' reporting configuration bug fix?; reporting configuration result Info log; added Sonoff SNZB-02 fingerprint; reportingConfguration is sent on pairing to HE;
  * ver. 1.0.11 2022-10-31 kkossev - added _TZE200_whkgqxse; fingerprint correction; _TZ3000_bguser20 _TZ3000_fllyghyj _TZ3000_yd2e749y _TZ3000_6uzkisv2
- * ver. 1.1.0  2022-12-13 kkossev - (test branch) - added _info_ attribute; delayed reporting configuration when the sleepy device wakes up; excluded TS0201 model devices in the delayed configuration; _TZE200_locansqn fingerprint correction
+ * ver. 1.1.0  2022-12-13 kkossev - (test branch) - added _info_ attribute; delayed reporting configuration when the sleepy device wakes up; excluded TS0201 model devices in the delayed configuration; _TZE200_locansqn fingerprint correction and max reporting periods formula correction
  *
  *
 */
@@ -509,25 +509,25 @@ def processTuyaCluster( descMap ) {
                 break
             case 0x0A: // (10) Max. Temp Alarm, Value / 10  (both TS0601_Tuya and TS0601_Haozee)
                 if (((safeToDouble(settings?.maxTempAlarmPar)*10.0 as int) == (fncmd as int)) || (getModelGroup() in ['TS0601_Haozee']))  {
-                    if (settings?.txtEnable) log.info "${device.displayName} reported temperature alarm upper limit ${fncmd/10.0 as double} C"
+                    if (settings?.logEnable) log.info "${device.displayName} reported temperature alarm upper limit ${fncmd/10.0 as double} C"
                 }
                 else {
-                    if (settings?.txtEnable) log.warn "${device.displayName} warning: temperature alarm upper limit reported by the device (${fncmd/10.0 as double} C) differs from the preference setting (${settings?.maxTempAlarmPar} C)"
+                    if (settings?.logEnable) log.warn "${device.displayName} warning: temperature alarm upper limit reported by the device (${fncmd/10.0 as double} C) differs from the preference setting (${settings?.maxTempAlarmPar} C)"
                 }
                 break
             case 0x0B: // (11) Min. Temp Alarm, Value / 10 (both TS0601_Tuya and TS0601_Haozee)
                 if (((safeToDouble(settings?.minTempAlarmPar)*10.0 as int) == (fncmd as int)) || (getModelGroup() in ['TS0601_Haozee'])) {
-                    if (settings?.txtEnable) log.info "${device.displayName} reported temperature alarm lower limit ${fncmd/10.0 as double} C"
+                    if (settings?.logEnable) log.info "${device.displayName} reported temperature alarm lower limit ${fncmd/10.0 as double} C"
                 }
                 else {
-                    if (settings?.txtEnable) log.warn "${device.displayName} warning: temperature alarm lower limit reported by the device (${fncmd/10.0 as double} C) differs from the preference setting (${settings?.minTempAlarmPar} C)"
+                    if (settings?.logEnable) log.warn "${device.displayName} warning: temperature alarm lower limit reported by the device (${fncmd/10.0 as double} C) differs from the preference setting (${settings?.minTempAlarmPar} C)"
                 }
                 break
             case 0x0C: // Max?. Humidity Alarm    (Haozee only?)
-                if (settings?.txtEnable) log.info "${device.displayName} humidity alarm upper limit is ${fncmd} "
+                if (settings?.logEnable) log.info "${device.displayName} humidity alarm upper limit is ${fncmd} "
                 break
             case 0x0D: // Min?. Humidity Alarm    (Haozee only?)
-                if (settings?.txtEnable) log.info "${device.displayName} humidity alarm lower limit is ${fncmd} "
+                if (settings?.logEnable) log.info "${device.displayName} humidity alarm lower limit is ${fncmd} "
                 //device.updateSetting("minHumidityAlarmPar", [value:fncmd, type:"number"])
                 break
             case 0x0E: // Temperature Alarm 0 = low alarm? 1 = high alarm? 2 = alarm cleared
@@ -560,39 +560,39 @@ def processTuyaCluster( descMap ) {
                     if (settings?.txtEnable) log.info "${device.displayName} Humidity Alarm (0x0F=${fncmd}) is inactive"
                 }
                 else {
-                    if (settings?.txtEnable) log.warn "${device.displayName} Temperature Alarm (0x0E) UNKNOWN value ${fncmd}" // 1 if alarm (lower alarm) ? 2 if lower alam is cleared
+                    if (settings?.logEnable) log.warn "${device.displayName} Temperature Alarm (0x0E) UNKNOWN value ${fncmd}" // 1 if alarm (lower alarm) ? 2 if lower alam is cleared
                 }
                 break
             case 0x11 : // (17) temperature max reporting interval, default 120 min (Haozee only) // maxReportingTimeTemp
-                if (settings?.maxReportingTimeTemp == fncmd*60) {
-                    if (settings?.txtEnable) log.info "${device.displayName} reported temperature max reporting interval ${fncmd} min (fncmd*60) seconds"
+                if (settings?.maxReportingTimeTemp == ((fncmd*60/2.5) as int)) {
+                    if (settings?.logEnable) log.info "${device.displayName} reported temperature max reporting interval ${fncmd} min (fncmd*60/2.5) seconds"
                 }
                 else {
-                    if (settings?.txtEnable) log.warn "${device.displayName} warning: temperature max reporting interval reported by the device (${fncmd*60}s) differs from the preference setting (${settings?.maxReportingTimeTemp}s)"
+                    if (settings?.logEnable) log.warn "${device.displayName} warning: temperature max reporting interval reported by the device (${((fncmd*60/2.5) as int)}s) differs from the preference setting (${settings?.maxReportingTimeTemp}s)"
                 }
                 break
             case 0x12 : // (18) humidity max reporting interval, default 120 min (Haozee only)
-                if (settings?.maxReportingTimeHumidity == fncmd*60) {
-                    if (settings?.txtEnable) log.info "${device.displayName} reported humidity max reporting interval ${fncmd} min (fncmd*60) seconds"
+                if (settings?.maxReportingTimeHumidity == ((fncmd*60/2.5) as int)) {
+                    if (settings?.logEnable) log.info "${device.displayName} reported humidity max reporting interval ${fncmd} min (fncmd*60) seconds"
                 }
                 else {
-                    if (settings?.txtEnable) log.warn "${device.displayName} warning: humidity max reporting interval reported by the device (${fncmd*60}s) differs from the preference setting (${settings?.maxReportingTimeHumidity}s)"
+                    if (settings?.logEnable) log.warn "${device.displayName} warning: humidity max reporting interval reported by the device (${((fncmd*60/2.5) as int)}s) differs from the preference setting (${settings?.maxReportingTimeHumidity}s)"
                 }
                 break
             case 0x13 : // (19) temperature sensitivity(value/2/10) default 0.3C ( divide / 2 for Haozee only?) 
                 if ((safeToDouble(settings?.temperatureSensitivity)*20.0 as int) == (fncmd as int)) {
-                    if (settings?.txtEnable) log.info "${device.displayName} reported temperature sensitivity ${fncmd/20.0} C"
+                    if (settings?.logEnable) log.info "${device.displayName} reported temperature sensitivity ${fncmd/20.0} C"
                 }
                 else {
-                    if (settings?.txtEnable) log.warn "${device.displayName} warning: temperature sensitivity reported by the device (${fncmd/20.0}) differs from the preference setting (${settings?.temperatureSensitivity})"
+                    if (settings?.logEnable) log.warn "${device.displayName} warning: temperature sensitivity reported by the device (${fncmd/20.0}) differs from the preference setting (${settings?.temperatureSensitivity})"
                 }
                 break
             case 0x14 : // (20) humidity sensitivity default 3%  (Haozee only)
                 if (settings?.humiditySensitivity == fncmd) {
-                    if (settings?.txtEnable) log.info "${device.displayName} reported humidity sensitivity ${fncmd} %"
+                    if (settings?.logEnable) log.info "${device.displayName} reported humidity sensitivity ${fncmd} %"
                 }
                 else {
-                    if (settings?.txtEnable) log.warn "${device.displayName} warning: humidity sensitivity reported by the device (${fncmd}%) differs from the preference setting (${settings?.humiditySensitivity}%)"
+                    if (settings?.logEnable) log.warn "${device.displayName} warning: humidity sensitivity reported by the device (${fncmd}%) differs from the preference setting (${settings?.humiditySensitivity}%)"
                 }
                 break
             case 0x65 : // (101)
@@ -817,11 +817,11 @@ def updated() {
         if (settings?.logEnable) log.trace "${device.displayName} setting  humiditySensitivity to ${intValue} %"
         cmds += sendTuyaCommand("14", DP_TYPE_VALUE, zigbee.convertToHexString(intValue as int, 8))
         //
-        intValue = (settings?.maxReportingTimeTemp as int) / 60
+        intValue = ((settings?.maxReportingTimeTemp * 2.5) as int) / 60
         if (settings?.logEnable) log.trace "${device.displayName} setting Temperature Max reporting time to ${intValue} minutes"
         cmds += sendTuyaCommand("11", DP_TYPE_VALUE, zigbee.convertToHexString(intValue as int, 8))
         //
-        intValue = (settings?.maxReportingTimeHumidity as int) / 60
+        intValue = ((settings?.maxReportingTimeHumidity *2.5) as int) / 60
         if (settings?.logEnable) log.trace "${device.displayName} setting Humidity Max reporting time to ${intValue} minutes"
         cmds += sendTuyaCommand("12", DP_TYPE_VALUE, zigbee.convertToHexString(intValue as int, 8))
 
