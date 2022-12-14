@@ -28,14 +28,15 @@
  * ver. 1.0.13 2022-09-25 kkossev  - added _TZE200_jva8ink8 AUBESS radar; 2-in-1 Sensitivity setting bug fix
  * ver. 1.0.14 2022-10-31 kkossev  - added Bond motion sensor ZX-BS-J11W fingerprint for tests
  * ver. 1.0.15 2022-12-03 kkossev  - OWON 0x0406 cluster binding; added _TZE204_ztc6ggyl _TZE200_ar0slwnd _TZE200_sfiy5tfs _TZE200_mrf6vtua (was wrongly 3in1) mmWave radards;
- * ver. 1.0.16 2022-12-10 kkossev  - (dev. branch) _TZE200_3towulqd (2-in-1) motion detection inverted; excluded from IAS group;
+ * ver. 1.0.16 2022-12-10 kkossev  - _TZE200_3towulqd (2-in-1) motion detection inverted; excluded from IAS group;
  *
- * ver. 1.1.0  2022-12-13 kkossev  - (TEST branch) SetPar() command
+ * ver. 1.1.0  2022-12-14 kkossev  - (TEST branch) SetPar() command
  *
+ *                                   TODO: runEvery1Hour, logsOff mod!
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/12/13 5:01 PM"}
+def timeStamp() {"2022/12/14 8:44 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -68,19 +69,16 @@ metadata {
         command "initialize", [[name: "Initialize the sensor after switching drivers.  \n\r   ***** Will load device default values! *****" ]]
         command "setMotion", [[name: "setMotion", type: "ENUM", constraints: ["No selection", "active", "inactive"], description: "Force motion active/inactive (for tests)"]]
         command "refresh",   [[name: "May work for some DC/mains powered sensors only"]] 
-
+        command "setPar", [
+                [name:"par", type: "STRING", description: "preference parameter name", constraints: ["STRING"]],
+                [name:"val", type: "STRING", description: "preference parameter value", constraints: ["STRING"]]
+        ]
         if (debug == true) {
             command "test", [
                 [name:"dpCommand", type: "STRING", description: "Tuya DP Command", constraints: ["STRING"]],
                 [name:"dpValue",   type: "STRING", description: "Tuya DP value", constraints: ["STRING"]],
                 [name:"dpType",    type: "ENUM",   constraints: ["DP_TYPE_VALUE", "DP_TYPE_BOOL", "DP_TYPE_ENUM"], description: "DP data type"] 
             ]
-    		command "setDetectionMode", [
-    			[name:"Select Detection Mode*", description:"detectionMode", type: "ENUM", constraints: detectionModeOptions] 
-            ]            
-    	    command "setLEDMode", [
-        		[name:"Select LED option*", description:"LED follows the occupancy state", type: "ENUM", constraints: ledStatusOptions] 
-            ]            
         }
         if (debug == true) {
             command "testX"
@@ -220,11 +218,11 @@ metadata {
 @Field static final Map vSensitivityOptions =   [ "0":"Speed Priority", "1":"Standard", "2":"Accuracy Priority" ]    // HumanPresenceSensorAIR
 @Field static final Map oSensitivityOptions =   [ "0":"Sensitive", "1":"Normal", "2":"Cautious" ]                    // HumanPresenceSensorAIR
 @Field static final Map detectionModeOptions =  [ "0":"General Model", "1":"Temporary Stay", "2":"Basic Detecton", "3":"PIR Sensor Test" ]    // HumanPresenceSensorAIR
-@Field static final Map ledStatusOptions =      [ "0" : "Switch On", "1" : "Switch Off", "2" : "Default"  ]      // HumanPresenceSensorAIR
+@Field static final Map ledStatusOptions =      [ "0" : "Switch On", "1" : "Switch Off", "2" : "Default"  ]          // HumanPresenceSensorAIR
 @Field static final Map blackSensorDistanceOptions =   [ "0":"0.5 m", "1":"1.0 m", "2":"1.5 m", "3":"2.0 m", "4":"2.5 m", "5":"3.0 m", "6":"3.5 m", "7":"4.0 m", "8":"4.5 m", "9":"5.0 m" ]    // BlackSensor - not working!
 @Field static final Map blackSensorMotionTypeOptions =   [ "0":"None", "1":"Presence", "2":"Peacefull", "3":"Small Move", "4":"Large Move"]    // BlackSensor - not working!
 @Field static final Map blackRadarLedOptions =      [ "0" : "Off", "1" : "On" ]      // HumanPresenceSensorAIR
-
+@Field static final Map radarSelfCheckingStatus =  [ "0":"checking", "1":"check_success", "2":"check_failure", "3":"others", "4":"comm_fault", "5":"radar_fault",  ] 
 
 @Field static final Integer numberOfconfigParams = 11
 @Field static final Integer temperatureOffsetParamIndex = 0
@@ -482,29 +480,29 @@ def processTuyaCluster( descMap ) {
                 break
             case 0x02 :
                 if (isRadar()) {    // including HumanPresenceSensorScene and isHumanPresenceSensorFall
-                    if (settings?.logEnable) log.info "${device.displayName} Radar sensitivity is ${fncmd}"
+                    logInfo "received Radar sensitivity : ${fncmd}"
                     device.updateSetting("radarSensitivity", [value:fncmd as int , type:"number"])
                 }
                 else {
-                    if (settings?.logEnable) log.warn "${device.displayName} non-radar event ${dp} fncmd = ${fncmd}"
+                    logWarn "${device.displayName} non-radar event ${dp} fncmd = ${fncmd}"
                 }
                 break
             case 0x03 :
                 if (isRadar()) {
-                    if (settings?.logEnable) log.info "${device.displayName} (dp=${dp}) reported Radar Minimum detection distance is ${fncmd/100} m"    //
+                    logInfo "${device.displayName} (dp=${dp}) received Radar Minimum detection distance : ${fncmd/100} m"    //
                     device.updateSetting("minimumDistance", [value:fncmd/100, type:"decimal"])
                 }
                 else {        // also battery level STATE for TS0202 ? 
-                    if (settings?.logEnable) log.warn "${device.displayName} non-radar event ${dp} fncmd = ${fncmd}"
+                    logWarn "non-radar event ${dp} fncmd = ${fncmd}"
                 }
                 break
             case 0x04 :    // Battery level for _TZE200_3towulqd
                 if (isRadar()) {
-                    if (settings?.logEnable) log.info "${device.displayName} Radar Maximum detection distance is ${fncmd/100} m"
+                    logInfo "received Radar Maximum detection distance : ${fncmd/100} m"
                     device.updateSetting("maximumDistance", [value:fncmd/100 , type:"decimal"])
                 }
                 else {        // also battery level for TS0202 
-                    if (settings?.logEnable) log.debug "${device.displayName} Tuya battery status report dp_id=${dp_id} dp=${dp} fncmd=${fncmd}"
+                    logDebug "Tuya battery status report dp_id=${dp_id} dp=${dp} fncmd=${fncmd}"
                     handleTuyaBatteryLevel( fncmd )                    
                 }
                 break
@@ -513,23 +511,23 @@ def processTuyaCluster( descMap ) {
             
             case 0x06 :
                 if (isRadar()) {
-                    if (settings?.logEnable) log.info "${device.displayName} Radar self checking status is ${fncmd}"
+                    logInfo "Radar self checking status : ${radarSelfCheckingStatus[fncmd.toString()]} (${fncmd})"        // @Field static final Map radarSelfCheckingStatus =  [ "0":"checking", "1":"check_success", "2":"check_failure", "3":"others", "4":"comm_fault", "5":"radar_fault",  ] 
                 }
                 else {
-                    if (settings?.logEnable) log.warn "${device.displayName} non-radar event ${dp} fncmd = ${fncmd}"
+                    logWarn "non-radar event ${dp} fncmd = ${fncmd}"
                 }
                 break
             case 0x09 :
                 if (isRadar()) {
                     if (settings?.ignoreDistance == false) {
-                        if (settings?.txtEnable) log.info "${device.displayName} Radar target distance is ${fncmd/100} m"
+                        logInfo "Radar target distance is ${fncmd/100} m"
                         sendEvent(name : "distance", value : fncmd/100, unit : "m")
                     }
                 }
                 else {
                     // sensitivity for TS0202 and 2in1 _TZE200_3towulqd 
                     def str = getSensitivityString(fncmd)
-                    if (settings?.txtEnable) log.info "${device.displayName} sensitivity is ${str} (${fncmd})"
+                    logInfo "received sensitivity : ${str} (${fncmd})"
                     device.updateSetting("sensitivity", [value:str, type:"enum"])                
                 }
                 break
@@ -546,7 +544,7 @@ def processTuyaCluster( descMap ) {
             case 0x65 :    // (101)
                 if (isRadar()) {
                     def value = fncmd / 10
-                    if (settings?.logEnable) log.info "${device.displayName} (dp=${dp}) reported Radar detection delay is ${value} seconds (${fncmd})"    //detectionDelay
+                    logInfo "(dp=${dp}) received Radar detection delay : ${value} seconds (${fncmd})"    //detectionDelay
                     device.updateSetting("detectionDelay", [value:value , type:"decimal"])
                 }
                 else if (isHumanPresenceSensorAIR()) {
@@ -564,7 +562,7 @@ def processTuyaCluster( descMap ) {
             case 0x66 :     // (102)
                 if (isRadar()) {
                     def value = fncmd / 10
-                    if (settings?.logEnable) log.info "${device.displayName} (dp=${dp}) reported Radar fading time is ${value} seconds (${fncmd})"        // 
+                    logInfo "${device.displayName} (dp=${dp}) received Radar fading time : ${value} seconds (${fncmd})"        // 
                     device.updateSetting("fadingTime", [value:value , type:"decimal"])
                 }                    
                 else if (isHumanPresenceSensorAIR()) {
@@ -1077,10 +1075,7 @@ def updated() {
         // sensitivity
         if (true /*getHashParam(sensitivityParamIndex) != calcHashParam(sensitivityParamIndex)*/) {    
             if (isRadar()) { 
-                def val = settings?.radarSensitivity
-                //log.trace "settings?.radarSensitivity = ${val}"
-                cmds += sendTuyaCommand("02", DP_TYPE_VALUE, zigbee.convertToHexString(val as int, 8))
-                if (settings?.logEnable) log.warn "${device.displayName} changing radar sensitivity to : ${val}"                
+                cmds += setRadarSensitivity( settings?.radarSensitivity )
             }
             else if (isTS0601_PIR()) {
                 def val = getSensitivityValue( sensitivity.toString() )
@@ -1108,37 +1103,13 @@ def updated() {
                 if (settings?.logEnable) log.debug "${device.displayName} changing IAS Keep Time to : ${settings?.keepTime }"                
             }
         }
-        // // radar detection delay
-        if (true /*getHashParam(detectionDelayParamIndex) != calcHashParam(detectionDelayParamIndex)*/) {    
+        // 
+        if (true) {    
             if (isRadar()) { 
-                 def value = ((settings?.detectionDelay as double) * 10.0) as int
-                cmds += sendTuyaCommand("65", DP_TYPE_VALUE, zigbee.convertToHexString(value, 8))
-                if (settings?.logEnable) log.warn "${device.displayName} changing radar detection delay to ${detectionDelay} seconds (${value})"                
-            }
-        }
-        // radar fading time
-        if (true /*getHashParam(fadingTimeParamIndex) != calcHashParam(fadingTimeParamIndex)*/) {            
-            if (isRadar()) { 
-                def value = ((settings?.fadingTime as double) * 10.0) as int
-                cmds += sendTuyaCommand("66", DP_TYPE_VALUE, zigbee.convertToHexString(value, 8))
-                if (settings?.logEnable) log.warn "${device.displayName} changing radar fading time to ${fadingTime} seconds (${value})"                
-            }
-        }
-
-        // radar minimum distance
-        if (true /*getHashParam(minimumDistanceParamIndex) != calcHashParam(minimumDistanceParamIndex)*/) {
-            if (isRadar()) { 
-                int value = ((settings?.minimumDistance as double) * 100.0) as int
-                cmds += sendTuyaCommand("03", DP_TYPE_VALUE, zigbee.convertToHexString(value as int, 8))
-                if (settings?.logEnable) log.warn "${device.displayName} changing radar minimum distance to ${settings?.minimumDistance} (${value})"                
-            }
-        }
-        // radar maximum distance
-        if (true /*getHashParam(maximumDistanceParamIndex) != calcHashParam(maximumDistanceParamIndex)*/) {
-            if (isRadar()) { 
-                int value = ((settings?.maximumDistance as double) * 100.0) as int
-                cmds += sendTuyaCommand("04", DP_TYPE_VALUE, zigbee.convertToHexString(value as int, 8))
-                if (settings?.logEnable) log.warn "${device.displayName} changing radar maximum distance to : ${settings?.maximumDistance} (${value})"                
+                cmds += setRadarDetectionDelay( settings?.detectionDelay )        // radar detection delay
+                cmds += setRadarFadingTime( settings?.fadingTime )                // radar fading time
+                cmds += setRadarMinimumDistance( settings?.minimumDistance )      // radar minimum distance
+                cmds += setRadarMaximumDistance( settings?.maximumDistance )      // radar maximum distance
             }
         }
         //
@@ -1707,6 +1678,105 @@ def setDetectionMode(String mode) {
     else {
         log.warn "Please select Detection Mode  mode"
     }
+}
+
+def logDebug(msg) {
+    if (settings?.logEnable) {
+        log.debug "${device.displayName} " + msg
+    }
+}
+
+def logInfo(msg) {
+    if (settings?.txtEnable) {
+        log.info "${device.displayName} " + msg
+    }
+}
+
+def logWarn(msg) {
+    if (settings?.txtEnable) {
+        log.warn "${device.displayName} " + msg
+    }
+}
+
+
+def setRadarDetectionDelay( val ) {
+    if (isRadar()) { 
+        def value = ((val as double) * 10.0) as int
+        logInfo "changing radar detection delay to ${val} seconds (${value})"                
+        return sendTuyaCommand("65", DP_TYPE_VALUE, zigbee.convertToHexString(value, 8))
+    }
+}
+
+def setRadarFadingTime( val ) {
+    if (isRadar()) { 
+        def value = ((val as double) * 10.0) as int
+        logInfo "changing radar fading time to ${val} seconds (${value})"                
+        return sendTuyaCommand("66", DP_TYPE_VALUE, zigbee.convertToHexString(value, 8))
+    }
+}
+
+def setRadarMinimumDistance( val ) {
+    if (isRadar()) { 
+        int value = ((val as double) * 100.0) as int
+        logInfo "changing radar minimum distance to ${val} (${value})"                
+        return sendTuyaCommand("03", DP_TYPE_VALUE, zigbee.convertToHexString(value as int, 8))
+    }
+}
+
+def setRadarMaximumDistance( val ) {
+    if (isRadar()) { 
+        int value = ((val as double) * 100.0) as int
+        logInfo "$changing radar maximum distance to : ${val} (${value})"                
+        return sendTuyaCommand("04", DP_TYPE_VALUE, zigbee.convertToHexString(value as int, 8))
+    }
+}     
+
+def setRadarSensitivity( val ) {
+    if (isRadar()) { 
+        logInfo "changing radar sensitivity to : ${val}"                
+        return sendTuyaCommand("02", DP_TYPE_VALUE, zigbee.convertToHexString(val as int, 8))
+    }
+}
+
+@Field static final Map settableParsMap = [
+    "radarSensitivity": [ min: 1,   scale: 0, max: 9,     step: 1,   type: 'number',   defaultValue: 7   , function: 'setRadarSensitivity'],
+    "detectionDelay"  : [ min: 0.0, scale: 0, max: 120.0, step: 0.1, type: 'decimal',  defaultValue: 0.2 , function: 'setRadarDetectionDelay'],
+    "fadingTime"      : [ min: 1.0, scale: 0, max: 500.0, step: 1.0, type: 'decimal',  defaultValue: 60.0, function: 'setRadarFadingTime'],
+    "minimumDistance" : [ min: 0.0, scale: 0, max:   9.5, step: 0.1, type: 'decimal',  defaultValue: 0.25, function: 'setRadarMinimumDistance'],
+    "maximumDistance" : [ min: 0.0, scale: 0, max:   9.5, step: 0.1, type: 'decimal',  defaultValue:  8.0, function: 'setRadarMaximumDistance']
+]
+
+def setPar( par, val )
+{
+    log.warn "setPark ${par} ${val}"
+    ArrayList<String> cmds = []
+    def value
+    Boolean validated = false
+    if (par == null || !(par in settableParsMap)) {
+        logWarn "setPar: parameter <b>${par}</b> must be one of these : ${settablePars}"
+        return
+    }
+    value = settableParsMap[par]?.type == "number" ? safeToInt(val, -1) : safeToDouble(val, -1.0)
+    if (value >= settableParsMap[par]?.min && value <= settableParsMap[par]?.max) validated = true
+    if (validated == false) {
+        log.warn "setPar: parameter <b>par</b> value <b>${val}</b> must be within ${settableParsMap[par]?.min} and  ${settableParsMap[par]?.max} "
+        return
+    }
+    //
+    def func
+    try {
+        func = settableParsMap[par]?.function
+        def type = settableParsMap[par]?.type
+        device.updateSetting("$par", [value:value, type:type])
+        cmds = "$func"(value)
+    }
+    catch (e) {
+        logWarn "Exception caught while processing <b>$func</b>(<b>$val</b>)"
+        return
+    }
+
+    logWarn "executed <b>$func</b>(<b>$val</b>)"
+    sendZigbeeCommands( cmds )
 }
 
 def test( dpCommand, dpValue, dpTypeString ) {
