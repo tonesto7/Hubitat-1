@@ -30,7 +30,7 @@
  * ver. 1.0.15 2022-12-03 kkossev  - OWON 0x0406 cluster binding; added _TZE204_ztc6ggyl _TZE200_ar0slwnd _TZE200_sfiy5tfs _TZE200_mrf6vtua (was wrongly 3in1) mmWave radards;
  * ver. 1.0.16 2022-12-10 kkossev  - _TZE200_3towulqd (2-in-1) motion detection inverted; excluded from IAS group;
  *
- * ver. 1.1.0  2022-12-14 kkossev  - (TEST branch) SetPar() command
+ * ver. 1.1.0  2022-12-14 kkossev  - (TEST branch) SetPar() command 
  *
  *                                   TODO: runEvery1Hour, logsOff mod!
 */
