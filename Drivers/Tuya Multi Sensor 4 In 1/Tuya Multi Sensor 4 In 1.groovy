@@ -30,13 +30,13 @@
  * ver. 1.0.15 2022-12-03 kkossev  - OWON 0x0406 cluster binding; added _TZE204_ztc6ggyl _TZE200_ar0slwnd _TZE200_sfiy5tfs _TZE200_mrf6vtua (was wrongly 3in1) mmWave radards;
  * ver. 1.0.16 2022-12-10 kkossev  - _TZE200_3towulqd (2-in-1) motion detection inverted; excluded from IAS group;
  *
- * ver. 1.1.0  2022-12-14 kkossev  - (TEST branch) SetPar() command 
+ * ver. 1.1.0  2022-12-15 kkossev  - (TEST branch) SetPar() command
  *
  *                                   TODO: runEvery1Hour, logsOff mod!
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/12/14 8:44 PM"}
+def timeStamp() {"2022/12/15 12:31 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -1746,14 +1746,14 @@ def setRadarSensitivity( val ) {
     "maximumDistance" : [ min: 0.0, scale: 0, max:   9.5, step: 0.1, type: 'decimal',  defaultValue:  8.0, function: 'setRadarMaximumDistance']
 ]
 
-def setPar( par, val )
+def setPar( par=null, val=null )
 {
     log.warn "setPark ${par} ${val}"
     ArrayList<String> cmds = []
     def value
     Boolean validated = false
-    if (par == null || !(par in settableParsMap)) {
-        logWarn "setPar: parameter <b>${par}</b> must be one of these : ${settablePars}"
+    if (par == null || !(par in (settableParsMap.keySet() as List))) {
+        logWarn "setPar: parameter <b>${par}</b> must be one of these : ${settableParsMap.keySet() as List}"
         return
     }
     value = settableParsMap[par]?.type == "number" ? safeToInt(val, -1) : safeToDouble(val, -1.0)
