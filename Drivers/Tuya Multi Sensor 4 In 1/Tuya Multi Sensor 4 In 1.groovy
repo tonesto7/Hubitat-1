@@ -30,13 +30,13 @@
  * ver. 1.0.15 2022-12-03 kkossev  - OWON 0x0406 cluster binding; added _TZE204_ztc6ggyl _TZE200_ar0slwnd _TZE200_sfiy5tfs _TZE200_mrf6vtua (was wrongly 3in1) mmWave radards;
  * ver. 1.0.16 2022-12-10 kkossev  - _TZE200_3towulqd (2-in-1) motion detection inverted; excluded from IAS group;
  *
- * ver. 1.1.0  2022-12-15 kkossev  - (TEST branch) SetPar() command
+ * ver. 1.1.0  2022-12-15 kkossev  - (TEST branch) SetPar() command;  added 'Send Event when parameters change' option
  *
  *                                   TODO: runEvery1Hour, logsOff mod!
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/12/15 12:31 PM"}
+def timeStamp() {"2022/12/15 9:11 PM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -64,7 +64,13 @@ metadata {
         attribute "motionType", "enum",  ["none", "presence", "peacefull", "smallMove", "largeMove"]    // blackSensor
         attribute "existance_time", "number"        // BlackSquareRadar
         attribute "leave_time", "number"            // BlackSquareRadar
-
+        
+        attribute "radarSensitivity", "number" 
+        attribute "detectionDelay", "decimal" 
+        attribute "fadingTime", "decimal" 
+        attribute "minimumDistance", "decimal" 
+        attribute "maximumDistance", "decimal" 
+        
         command "configure", [[name: "Configure the sensor after switching drivers"]]
         command "initialize", [[name: "Initialize the sensor after switching drivers.  \n\r   ***** Will load device default values! *****" ]]
         command "setMotion", [[name: "setMotion", type: "ENUM", constraints: ["No selection", "active", "inactive"], description: "Force motion active/inactive (for tests)"]]
@@ -210,9 +216,20 @@ metadata {
             if (isBlackSquareRadar()) {
 		        input (name: "indicatorLight", type: "enum", title: "Indicator Light", description: "Red LED is lit when presence detected", defaultValue: "0", options: blackRadarLedOptions)  
             }
+            if (isRadar()) {
+                input (name: "parEvents", type: "bool", title: "Send Event when parameters change", description: "<i>Enable only when the SetPar() custom command is used in RM or webCoRE</i>", defaultValue: false)
+            }
         }
     }
 }
+
+@Field static final Map settableParsMap = [
+    "radarSensitivity": [ min: 1,   scale: 0, max: 9,     step: 1,   type: 'number',   defaultValue: 7   , function: 'setRadarSensitivity'],
+    "detectionDelay"  : [ min: 0.0, scale: 0, max: 120.0, step: 0.1, type: 'decimal',  defaultValue: 0.2 , function: 'setRadarDetectionDelay'],
+    "fadingTime"      : [ min: 1.0, scale: 0, max: 500.0, step: 1.0, type: 'decimal',  defaultValue: 60.0, function: 'setRadarFadingTime'],
+    "minimumDistance" : [ min: 0.0, scale: 0, max:   9.5, step: 0.1, type: 'decimal',  defaultValue: 0.25, function: 'setRadarMinimumDistance'],
+    "maximumDistance" : [ min: 0.0, scale: 0, max:   9.5, step: 0.1, type: 'decimal',  defaultValue:  8.0, function: 'setRadarMaximumDistance']
+]
 
 @Field static final Map inductionStateOptions = [ "0":"Occupied", "1":"Vacancy" ]
 @Field static final Map vSensitivityOptions =   [ "0":"Speed Priority", "1":"Standard", "2":"Accuracy Priority" ]    // HumanPresenceSensorAIR
@@ -482,6 +499,7 @@ def processTuyaCluster( descMap ) {
                 if (isRadar()) {    // including HumanPresenceSensorScene and isHumanPresenceSensorFall
                     logInfo "received Radar sensitivity : ${fncmd}"
                     device.updateSetting("radarSensitivity", [value:fncmd as int , type:"number"])
+                    if (settings?.parEvents == true) sendEvent(name : "radarSensitivity", value : fncmd as int/*, unit : "m"*/)
                 }
                 else {
                     logWarn "${device.displayName} non-radar event ${dp} fncmd = ${fncmd}"
@@ -491,6 +509,7 @@ def processTuyaCluster( descMap ) {
                 if (isRadar()) {
                     logInfo "${device.displayName} (dp=${dp}) received Radar Minimum detection distance : ${fncmd/100} m"    //
                     device.updateSetting("minimumDistance", [value:fncmd/100, type:"decimal"])
+                    if (settings?.parEvents == true) sendEvent(name : "minimumDistance", value : fncmd/100, unit : "m")
                 }
                 else {        // also battery level STATE for TS0202 ? 
                     logWarn "non-radar event ${dp} fncmd = ${fncmd}"
@@ -500,6 +519,7 @@ def processTuyaCluster( descMap ) {
                 if (isRadar()) {
                     logInfo "received Radar Maximum detection distance : ${fncmd/100} m"
                     device.updateSetting("maximumDistance", [value:fncmd/100 , type:"decimal"])
+                    if (settings?.parEvents == true) sendEvent(name : "maximumDistance", value : fncmd/100, unit : "m")
                 }
                 else {        // also battery level for TS0202 
                     logDebug "Tuya battery status report dp_id=${dp_id} dp=${dp} fncmd=${fncmd}"
@@ -512,6 +532,7 @@ def processTuyaCluster( descMap ) {
             case 0x06 :
                 if (isRadar()) {
                     logInfo "Radar self checking status : ${radarSelfCheckingStatus[fncmd.toString()]} (${fncmd})"        // @Field static final Map radarSelfCheckingStatus =  [ "0":"checking", "1":"check_success", "2":"check_failure", "3":"others", "4":"comm_fault", "5":"radar_fault",  ] 
+                    if (settings?.parEvents == true) sendEvent(name : "radarStatus", value : radarSelfCheckingStatus[fncmd.toString()])
                 }
                 else {
                     logWarn "non-radar event ${dp} fncmd = ${fncmd}"
@@ -546,6 +567,7 @@ def processTuyaCluster( descMap ) {
                     def value = fncmd / 10
                     logInfo "(dp=${dp}) received Radar detection delay : ${value} seconds (${fncmd})"    //detectionDelay
                     device.updateSetting("detectionDelay", [value:value , type:"decimal"])
+                    if (settings?.parEvents == true) sendEvent(name : "detectionDelay", value : value)
                 }
                 else if (isHumanPresenceSensorAIR()) {
                     if (settings?.txtEnable) log.info "${device.displayName} reported V_Sensitivity <b>${vSensitivityOptions[fncmd.toString()]}</b> (${fncmd})"
@@ -564,6 +586,7 @@ def processTuyaCluster( descMap ) {
                     def value = fncmd / 10
                     logInfo "${device.displayName} (dp=${dp}) received Radar fading time : ${value} seconds (${fncmd})"        // 
                     device.updateSetting("fadingTime", [value:value , type:"decimal"])
+                    if (settings?.parEvents == true) sendEvent(name : "fadingTime", value : value)
                 }                    
                 else if (isHumanPresenceSensorAIR()) {
                     if (settings?.txtEnable) log.info "${device.displayName} reported O_Sensitivity <b>${oSensitivityOptions[fncmd.toString()]}</b> (${fncmd})"
@@ -1060,7 +1083,13 @@ def updated() {
     else {
         unschedule(logsOff)
     }
-    
+    if (settings?.parEvents == false) {
+        device.deleteCurrentState('radarSensitivity')
+        device.deleteCurrentState('detectionDelay')
+        device.deleteCurrentState('fadingTime')
+        device.deleteCurrentState('minimumDistance')
+        device.deleteCurrentState('maximumDistance')
+    }
     
     if (true /*state.hashStringPars != calcParsHashString()*/) {    // an configurable device parameter was changed
         if (settings?.logEnable) log.debug "${device.displayName} Config parameters changed! old=${state.hashStringPars} new=${calcParsHashString()}"
@@ -1271,6 +1300,8 @@ void initializeVars( boolean fullInit = false ) {
     if (fullInit == true || settings.minimumDistance == null) device.updateSetting("minimumDistance", [value:0.25, type:"decimal"])
     if (fullInit == true || settings.maximumDistance == null) device.updateSetting("maximumDistance",[value:8.0, type:"decimal"])
     if (fullInit == true || settings.luxThreshold == null) device.updateSetting("luxThreshold", [value:1, type:"number"])
+    if (fullInit == true || settings.parEvents == null) device.updateSetting("parEvents", false)
+    
     //
     if (fullInit == true) sendEvent(name : "powerSource",	value : "?", isStateChange : true)
     //
@@ -1738,13 +1769,6 @@ def setRadarSensitivity( val ) {
     }
 }
 
-@Field static final Map settableParsMap = [
-    "radarSensitivity": [ min: 1,   scale: 0, max: 9,     step: 1,   type: 'number',   defaultValue: 7   , function: 'setRadarSensitivity'],
-    "detectionDelay"  : [ min: 0.0, scale: 0, max: 120.0, step: 0.1, type: 'decimal',  defaultValue: 0.2 , function: 'setRadarDetectionDelay'],
-    "fadingTime"      : [ min: 1.0, scale: 0, max: 500.0, step: 1.0, type: 'decimal',  defaultValue: 60.0, function: 'setRadarFadingTime'],
-    "minimumDistance" : [ min: 0.0, scale: 0, max:   9.5, step: 0.1, type: 'decimal',  defaultValue: 0.25, function: 'setRadarMinimumDistance'],
-    "maximumDistance" : [ min: 0.0, scale: 0, max:   9.5, step: 0.1, type: 'decimal',  defaultValue:  8.0, function: 'setRadarMaximumDistance']
-]
 
 def setPar( par=null, val=null )
 {
