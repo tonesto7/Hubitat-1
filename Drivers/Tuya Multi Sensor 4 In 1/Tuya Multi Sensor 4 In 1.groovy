@@ -32,7 +32,7 @@
  *
  * ver. 1.1.0  2022-12-15 kkossev  - (TEST branch) SetPar() command;  added 'Send Event when parameters change' option
  *
- *                                   TODO: runEvery1Hour, logsOff mod!
+ *                                   TODO: runEvery1Hour, logsOff mod! 
 */
 
 def version() { "1.1.0" }
