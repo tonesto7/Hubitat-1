@@ -30,13 +30,13 @@
  * ver. 1.0.15 2022-12-03 kkossev  - OWON 0x0406 cluster binding; added _TZE204_ztc6ggyl _TZE200_ar0slwnd _TZE200_sfiy5tfs _TZE200_mrf6vtua (was wrongly 3in1) mmWave radards;
  * ver. 1.0.16 2022-12-10 kkossev  - _TZE200_3towulqd (2-in-1) motion detection inverted; excluded from IAS group;
  *
- * ver. 1.1.0  2022-12-15 kkossev  - (TEST branch) SetPar() command;  added 'Send Event when parameters change' option
+ * ver. 1.1.0  2022-12-17 kkossev  - (TEST branch) SetPar() command;  added 'Send Event when parameters change' option; code cleanup
  *
- *                                   TODO: runEvery1Hour, logsOff mod! 
+ *                                   TODO: runEvery1Hour, logsOff mod!
 */
 
 def version() { "1.1.0" }
-def timeStamp() {"2022/12/15 9:11 PM"}
+def timeStamp() {"2022/12/16 11:49 AM"}
 
 import groovy.json.*
 import groovy.transform.Field
@@ -241,23 +241,8 @@ metadata {
 @Field static final Map blackRadarLedOptions =      [ "0" : "Off", "1" : "On" ]      // HumanPresenceSensorAIR
 @Field static final Map radarSelfCheckingStatus =  [ "0":"checking", "1":"check_success", "2":"check_failure", "3":"others", "4":"comm_fault", "5":"radar_fault",  ] 
 
-@Field static final Integer numberOfconfigParams = 11
-@Field static final Integer temperatureOffsetParamIndex = 0
-@Field static final Integer humidityOffsetParamIndex = 1
-@Field static final Integer luxOffsetParamIndex = 2
-@Field static final Integer ledEnableParamIndex = 3
-@Field static final Integer sensitivityParamIndex = 4
-@Field static final Integer detectionDelayParamIndex = 5
-@Field static final Integer fadingTimeParamIndex = 6
-@Field static final Integer minimumDistanceParamIndex = 7
-@Field static final Integer maximumDistanceParamIndex = 8
-@Field static final Integer keepTimeParamIndex = 9
-@Field static final Integer radarSensitivityParamIndex = 10
-
-
 @Field static final Integer presenceCountTreshold = 4
 @Field static final Integer defaultPollingInterval = 3600
-
 
 def is4in1() { return device.getDataValue('manufacturer') in ['_TZ3210_zmy9hjay', '_TYST11_i5j6ifxj', '_TYST11_7hfcudw5'] }
 def is3in1() { return device.getDataValue('manufacturer') in ['_TZE200_7hfcudw5'] }
@@ -1091,18 +1076,16 @@ def updated() {
         device.deleteCurrentState('maximumDistance')
     }
     
-    if (true /*state.hashStringPars != calcParsHashString()*/) {    // an configurable device parameter was changed
-        if (settings?.logEnable) log.debug "${device.displayName} Config parameters changed! old=${state.hashStringPars} new=${calcParsHashString()}"
-        
+    if (true) {    // an configurable device parameter was changed
         //    LED enable
-        if (true /*getHashParam(ledEnableParamIndex) != calcHashParam(ledEnableParamIndex)*/) {
+        if (true) {
             if (is4in1()) {
                 cmds += sendTuyaCommand("6F", DP_TYPE_BOOL, settings?.ledEnable == true ? "01" : "00")
                 if (settings?.logEnable) log.warn "${device.displayName} changing ledEnable to : ${settings?.ledEnable }"                
             }
         }
         // sensitivity
-        if (true /*getHashParam(sensitivityParamIndex) != calcHashParam(sensitivityParamIndex)*/) {    
+        if (true) {    
             if (isRadar()) { 
                 cmds += setRadarSensitivity( settings?.radarSensitivity )
             }
@@ -1117,7 +1100,7 @@ def updated() {
             }
         }
         // keep time
-        if (true /*getHashParam(keepTimeParamIndex) != calcHashParam(keepTimeParamIndex)*/) {    
+        if (true) {    
             if (isRadar()) {
                 // do nothing
             }
@@ -1199,13 +1182,9 @@ def updated() {
                 if (settings?.logEnable) log.debug "${device.displayName} setting indicator light to : ${blackRadarLedOptions[value.toString()]} (${value})"  
             }
         }
-        //
-        state.hashStringPars = calcParsHashString()
+
     }
-    else {
-        if (settings?.logEnable) log.debug "${device.displayName} no change in state.hashStringPars = {state.hashStringPars}"
-    }
-    
+    //    
     if (cmds != null) {
         if (settings?.logEnable) log.debug "${device.displayName} sending the changed AdvancedOptions"
         sendZigbeeCommands( cmds )  
@@ -1229,16 +1208,12 @@ def refresh() {
 def driverVersionAndTimeStamp() {version()+' '+timeStamp()}
 
 def checkDriverVersion() {
-    if (state.driverVersion != null && driverVersionAndTimeStamp() == state.driverVersion) {
-        // no driver version change
-    }
-    else {
+    if (state.driverVersion == null || driverVersionAndTimeStamp() != state.driverVersion) {
         if (txtEnable==true) log.debug "${device.displayName} updating the settings from the current driver version ${state.driverVersion} to the new version ${driverVersionAndTimeStamp()}"
         initializeVars( fullInit = false ) 
         state.driverVersion = driverVersionAndTimeStamp()
-        if (state.lastPresenceState != null) {
-            state.remove('lastPresenceState')    // removed in version 1.0.6 
-        }
+        if (state.lastPresenceState != null) state.remove('lastPresenceState')    // removed in version 1.0.6 
+        if (state.hashStringPars != null)    state.remove('hashStringPars')       // removed in version 1.1.0
         if (isRadar() || isHumanPresenceSensorAIR()) {
             if (settings?.ignoreDistance == true ) {
                 device.deleteCurrentState('distance')
@@ -1305,8 +1280,6 @@ void initializeVars( boolean fullInit = false ) {
     //
     if (fullInit == true) sendEvent(name : "powerSource",	value : "?", isStateChange : true)
     //
-    state.hashStringPars = calcParsHashString()
-    if (settings?.logEnable) log.debug "${device.displayName} state.hashStringPars = ${state.hashStringPars}"
 }
 
 def tuyaBlackMagic() {
@@ -1476,68 +1449,6 @@ String generateMD5(String s) {
 }
 
 
-def calcParsHashString() {
-    String hashPars = ''
-    for (int i = 0; i< numberOfconfigParams; i++) {
-        hashPars += calcHashParam( i )     
-    }
-    return hashPars
-}
-
-def getHashParam(num) {
-    try {
-        return state.hashStringPars[num*2..num*2+1]
-    }
-    catch (e) {
-        log.error "exception caught getHashParam(${num})"
-        return '??' 
-    }
-}
-
-
-def calcHashParam(num) {
-    def hashByte
-    try {
-        switch (num) {
-            case temperatureOffsetParamIndex : hashByte = generateMD5(temperatureOffset.toString())[-2..-1];  break
-            case humidityOffsetParamIndex :    hashByte = generateMD5(humidityOffset.toString())[-2..-1];     break
-            case luxOffsetParamIndex :         hashByte = generateMD5(luxOffset.toString())[-2..-1];          break
-            case ledEnableParamIndex :         hashByte = generateMD5(ledEnable.toString())[-2..-1];          break
-            case sensitivityParamIndex :       hashByte = generateMD5(sensitivity.toString())[-2..-1];        break
-            case detectionDelayParamIndex :    hashByte = generateMD5(detectionDelay.toString())[-2..-1];     break
-            case fadingTimeParamIndex :        hashByte = generateMD5(fadingTime.toString())[-2..-1];         break
-            case minimumDistanceParamIndex :   hashByte = generateMD5(minimumDistance.toString())[-2..-1];    break
-            case maximumDistanceParamIndex :   hashByte = generateMD5(maximumDistance.toString())[-2..-1];    break
-            case keepTimeParamIndex :          hashByte = generateMD5(keepTime.toString())[-2..-1];           break
-            case radarSensitivityParamIndex :  hashByte = generateMD5(radarSensitiviry.toString())[-2..-1];   break
-            //minimumDistance
-            default :
-                log.error "invalid par calcHashParam(${num})"
-                return '??'
-        }
-    }
-    catch (e) {
-        log.error "exception caught calcHashParam(${num})"
-        return '??' 
-    }
-}
-
-def testX() {
-    /*
-    //sendSensitivity("high")
-    def str = getSensitivityString(2)
-    log.trace "str = ${str}"
-//    device.updateSetting("sensitivity", [value:"No selection", type:"enum"])
-    device.updateSetting("sensitivity", [value:str, type:"enum"])
-*/
-    
-    def str = "Off"
-    log.trace "str = ${str}"
-//    device.updateSetting("sensitivity", [value:"No selection", type:"enum"])
-    // "testType", [type:"text", value: "auto"]
-    device.updateSetting("ledStatusAIR", [type:"enum", value: 1.toString()])
-    
-}
 
 def getSensitivityString( value ) { return value == 0 ? "low" : value == 1 ? "medium" : value == 2 ? "high" : null }
 def getSensitivityValue( str )    { return str == "low" ? 0: str == "medium" ? 1 : str == "high" ? 02 : null }
@@ -1599,11 +1510,9 @@ def setPresent() {
     powerSourceEvent()
     if (device.currentValue('powerSource', true) in ['unknown', '?']) {
         if (settings?.txtEnable) log.info "${device.displayName} is present"
-        //log.trace "device.currentValue('battery', true) = ${device.currentValue('battery', true)}"
         if (!isRadar()) {
             if (device.currentValue('battery', true) == 0 ) {
                 if (state.lastBattery != null &&  safeToInt(state.lastBattery) != 0) {
-                    //log.trace "restoring battery level to ${safeToInt(state.lastBattery)}"
                     sendBatteryEvent(safeToInt(state.lastBattery), isDigital=true)
                 }
             }
@@ -1614,7 +1523,6 @@ def setPresent() {
 
 // called every 60 minutes from pollPresence()
 def checkIfNotPresent() {
-    //log.trace "checkIfNotPresent()"
     if (state.notPresentCounter != null) {
         state.notPresentCounter = state.notPresentCounter + 1
         if (state.notPresentCounter >= presenceCountTreshold) {
@@ -1626,7 +1534,6 @@ def checkIfNotPresent() {
                 handleMotion(false, isDigital=true)
                 if (settings?.txtEnable) log.warn "${device.displayName} forced motion to '<b>inactive</b>"
             }
-            //log.trace "battery was ${safeToInt(device.currentValue('battery', true))}"
             if (safeToInt(device.currentValue('battery', true)) != 0) {
                 if (settings?.txtEnable) log.warn "${device.displayName} forced battery to '<b>0 %</b>"
                 sendBatteryEvent( 0, isDigital=true )
@@ -1650,7 +1557,7 @@ def pollPresence() {
 
 def deleteAllStatesAndJobs() {
 /*    
-    state.clear()
+    state.clear()    // clear all states
     unschedule()
     device.deleteCurrentState('motion')
     device.deleteCurrentState('temperature')
@@ -1684,9 +1591,7 @@ def force_TZE200_9qayzqa8() {
 
 
 def setLEDMode(String mode) {
-    //log.trace "modeName = ${mode}"
     Short paramVal = safeToInt(ledStatusOptions.find{ it.value == mode }?.key)    
-    //log.trace "paramVal = ${paramVal}"
     if (paramVal != null && paramVal != 99) {
         ArrayList<String> cmds = []
         def dpValHex = zigbee.convertToHexString(paramVal as int, 2)
@@ -1802,6 +1707,10 @@ def setPar( par=null, val=null )
     logWarn "executed <b>$func</b>(<b>$val</b>)"
     sendZigbeeCommands( cmds )
 }
+
+def testX() {
+}
+
 
 def test( dpCommand, dpValue, dpTypeString ) {
     ArrayList<String> cmds = []
